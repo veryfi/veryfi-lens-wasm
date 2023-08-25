@@ -95,6 +95,12 @@ For usual receipt (Next.Js example)
 ```
 
 For Long receipt (Next.Js example)
+Add container with id="preview-container" to see stitching preview
+```
+<div id="preview-container"
+      className="absolute top-[100px] left-[10px] md:left-[40px] w-[22vw] md:w-[18vw] h-[70vh] rounded-md z-40 overflow-y-hidden border-[1px] border-solid border-green-300"
+      ></div>
+```
 ```
  const [veryfiLens, setVeryfiLens] = useState<{
     startStitching(): void;
