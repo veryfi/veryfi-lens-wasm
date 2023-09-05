@@ -145,6 +145,7 @@ const VeryfiLens = (function () {
             corner.map((cord) => cord / scale)
           );
           drawContours(rCorners);
+          coordinates = rCorners;
           break;
         default:
           isSocketBusy = false;
@@ -366,57 +367,11 @@ const VeryfiLens = (function () {
     }
   };
 
-  const cropWasm = async () => {
-    let wasmOutput;
-    if (hasCoordinates) {
-      wasmOutput = await wasmWrapper.cropDocument(fullSizeImage);
-    } else {
-      // If there are no coordinates, use the fullSizeImage as it is.
-      const canvas = new OffscreenCanvas(
-        fullSizeImage.width,
-        fullSizeImage.height
-      );
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(fullSizeImage, 0, 0);
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        fullSizeImage.width,
-        fullSizeImage.height
-      );
-      wasmOutput = {
-        data: new Uint8ClampedArray(imageData.data.buffer),
-        blurLevel: -1.0,
-        outputWidth: fullSizeImage.width,
-        outputHeight: fullSizeImage.height,
-      };
-    }
-    console.log(wasmOutput);
-    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-    console.log(outputWidth, outputHeight);
-    const width = outputWidth;
-    const height = outputHeight;
-    const cropImgCanvas = cropImgRef;
-    cropImgRef.height = height;
-    cropImgRef.width = width;
-    const ctx = cropImgCanvas.getContext("2d");
-    const imageData = new ImageData(data, width, height);
-    ctx.putImageData(imageData, 0, 0);
-
-    stopWasm();
-
-    const imgString = cropImgCanvas.toDataURL("image/jpeg");
-    image = cropImgCanvas;
-    console.log(blurLevel);
-    isBlurry(image);
-    releaseCanvas(boxRef);
-    coordinates = [];
-    return imgString.split("data:image/jpeg;base64,")[1];
-  };
   const getLongImage = async () => {
     let wasmOutput;
     wasmOutput = await wasmWrapper.getStitchedImage();
-    const { data, outputHeight, outputWidth } = wasmOutput;
+    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+    // console.log(blurLevel)
     const width = outputWidth;
     const height = outputHeight;
     const cropImgCanvas = cropImgRef;
@@ -425,6 +380,7 @@ const VeryfiLens = (function () {
     const ctx = cropImgCanvas.getContext("2d");
     const imageData = new ImageData(data, width, height);
     ctx.putImageData(imageData, 0, 0);
+    // setBlurStatus(blurLevel); gives 0 all the time
     stopWasm();
     const imgString = cropImgCanvas.toDataURL("image/jpeg");
     image = cropImgCanvas;
@@ -533,74 +489,172 @@ const VeryfiLens = (function () {
     }
   };
 
-  const cropImage = async () => {
-    const video = videoRef;
-    const cropImgCanvas = cropImgRef;
-    if (fullSizeImage) {
-      console.log("[Event] Full size image is set");
-      if (hasCoordinates) {
-        setIsDocument(true);
-        let { sx, sy, sw, sh } = getCropLimits(coordinates);
-        const scaleWidth = fullSizeImage.width / video.videoWidth;
-        const scaleHeight = fullSizeImage.height / video.videoHeight;
-
-        sx = sx * scaleWidth;
-        sy = sy * scaleHeight;
-        sw = sw * scaleWidth;
-        sh = sh * scaleHeight;
-
-        cropImgCanvas.width = sw;
-        cropImgCanvas.height = sh;
-        const ctx = cropImgCanvas.getContext("2d");
-
-        if (ctx) {
-          ctx.save();
-          ctx.drawImage(fullSizeImage, sx, sy, sw, sh, 0, 0, sw, sh);
-          ctx.restore();
-        }
-      } else {
-        cropImgCanvas.width = video.videoWidth;
-        cropImgCanvas.height = video.videoHeight;
-        const ctx = cropImgCanvas.getContext("2d");
-        if (ctx) {
-          ctx.save();
-          ctx.drawImage(fullSizeImage, 0, 0);
-          ctx.restore();
-        }
-      }
+  const cropWasm = async () => {
+    let wasmOutput;
+    if (hasCoordinates) {
+      wasmOutput = await wasmWrapper.cropDocument(fullSizeImage);
     } else {
-      if (hasCoordinates) {
-        setIsDocument(true);
-        let { sx, sy, sw, sh } = getCropLimits(coordinates);
-        cropImgCanvas.width = sw;
-        cropImgCanvas.height = sh;
-        const ctx = cropImgCanvas.getContext("2d");
-        if (ctx) {
-          ctx.save();
-          ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-          ctx.restore();
-        }
-      } else {
-        cropImgCanvas.width = video.videoWidth;
-        cropImgCanvas.height = video.videoHeight;
-        const ctx = cropImgCanvas.getContext("2d");
-        if (ctx) {
-          ctx.save();
-          ctx.drawImage(video, 0, 0);
-          ctx.restore();
-        }
-      }
+      // If there are no coordinates, use the fullSizeImage as it is.
+      const canvas = new OffscreenCanvas(
+        fullSizeImage.width,
+        fullSizeImage.height
+      );
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(fullSizeImage, 0, 0);
+      const imageData = ctx.getImageData(
+        0,
+        0,
+        fullSizeImage.width,
+        fullSizeImage.height
+      );
+      wasmOutput = {
+        data: new Uint8ClampedArray(imageData.data.buffer),
+        blurLevel: -1.0,
+        outputWidth: fullSizeImage.width,
+        outputHeight: fullSizeImage.height,
+      };
     }
+    console.log(wasmOutput);
+    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+    console.log(outputWidth, outputHeight);
+    const width = outputWidth;
+    const height = outputHeight;
+    const cropImgCanvas = cropImgRef;
+    cropImgRef.height = height;
+    cropImgRef.width = width;
+    const ctx = cropImgCanvas.getContext("2d");
+    const imageData = new ImageData(data, width, height);
+    ctx.putImageData(imageData, 0, 0);
+    setBlurStatus(blurLevel);
+    stopWasm();
 
-    waitForElement("#blur-detector").then(() => {
-      isBlurry(cropImgCanvas);
-    });
-
-    image = cropImgCanvas;
     const imgString = cropImgCanvas.toDataURL("image/jpeg");
-
+    image = cropImgCanvas;
+    releaseCanvas(boxRef);
+    coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
+
+  const socketCropWasm = async () => {
+    let wasmOutput;
+    if (hasCoordinates) {
+      let [topLeft, topRight, bottomLeft, bottomRight] =
+        getCropLimits(coordinates);
+      wasmOutput = await wasmWrapper.cropWasm(
+        fullSizeImage,
+        [topLeft, topRight, bottomLeft, bottomRight].flat()
+      );
+    } else {
+      // If there are no coordinates, use the fullSizeImage as it is.
+      const canvas = new OffscreenCanvas(
+        fullSizeImage.width,
+        fullSizeImage.height
+      );
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(fullSizeImage, 0, 0);
+      const imageData = ctx.getImageData(
+        0,
+        0,
+        fullSizeImage.width,
+        fullSizeImage.height
+      );
+      wasmOutput = {
+        data: new Uint8ClampedArray(imageData.data.buffer),
+        blurLevel: -1.0,
+        outputWidth: fullSizeImage.width,
+        outputHeight: fullSizeImage.height,
+      };
+    }
+    console.log(wasmOutput);
+    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+    console.log(outputWidth, outputHeight);
+    const width = outputWidth;
+    const height = outputHeight;
+    const cropImgCanvas = cropImgRef;
+    cropImgRef.height = height;
+    cropImgRef.width = width;
+    const ctx = cropImgCanvas.getContext("2d");
+    const imageData = new ImageData(data, width, height);
+    ctx.putImageData(imageData, 0, 0);
+    setBlurStatus(blurLevel);
+
+    stopWasm();
+
+    const imgString = cropImgCanvas.toDataURL("image/jpeg");
+    image = cropImgCanvas;
+    releaseCanvas(boxRef);
+    coordinates = [];
+    return imgString.split("data:image/jpeg;base64,")[1];
+  };
+
+  // const cropImage = async () => {
+  //   const video = videoRef;
+  //   const cropImgCanvas = cropImgRef;
+  //   if (fullSizeImage) {
+  //     console.log("[Event] Full size image is set");
+  //     if (hasCoordinates) {
+  //       setIsDocument(true);
+  //       let { sx, sy, sw, sh } = getCropLimits(coordinates);
+  //       const scaleWidth = fullSizeImage.width / video.videoWidth;
+  //       const scaleHeight = fullSizeImage.height / video.videoHeight;
+
+  //       sx = sx * scaleWidth;
+  //       sy = sy * scaleHeight;
+  //       sw = sw * scaleWidth;
+  //       sh = sh * scaleHeight;
+
+  //       cropImgCanvas.width = sw;
+  //       cropImgCanvas.height = sh;
+  //       const ctx = cropImgCanvas.getContext("2d");
+
+  //       if (ctx) {
+  //         ctx.save();
+  //         ctx.drawImage(fullSizeImage, sx, sy, sw, sh, 0, 0, sw, sh);
+  //         ctx.restore();
+  //       }
+  //     } else {
+  //       cropImgCanvas.width = video.videoWidth;
+  //       cropImgCanvas.height = video.videoHeight;
+  //       const ctx = cropImgCanvas.getContext("2d");
+  //       if (ctx) {
+  //         ctx.save();
+  //         ctx.drawImage(fullSizeImage, 0, 0);
+  //         ctx.restore();
+  //       }
+  //     }
+  //   } else {
+  //     if (hasCoordinates) {
+  //       setIsDocument(true);
+  //       let { sx, sy, sw, sh } = getCropLimits(coordinates);
+  //       cropImgCanvas.width = sw;
+  //       cropImgCanvas.height = sh;
+  //       const ctx = cropImgCanvas.getContext("2d");
+  //       if (ctx) {
+  //         ctx.save();
+  //         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+  //         ctx.restore();
+  //       }
+  //     } else {
+  //       cropImgCanvas.width = video.videoWidth;
+  //       cropImgCanvas.height = video.videoHeight;
+  //       const ctx = cropImgCanvas.getContext("2d");
+  //       if (ctx) {
+  //         ctx.save();
+  //         ctx.drawImage(video, 0, 0);
+  //         ctx.restore();
+  //       }
+  //     }
+  //   }
+
+  //   waitForElement("#blur-detector").then(() => {
+  //     isBlurry(cropImgCanvas);
+  //   });
+
+  //   image = cropImgCanvas;
+  //   const imgString = cropImgCanvas.toDataURL("image/jpeg");
+
+  //   return imgString.split("data:image/jpeg;base64,")[1];
+  // };
 
   const getCropLimits = (coordinates) => {
     const sx = Math.min(
@@ -629,7 +683,13 @@ const VeryfiLens = (function () {
         coordinates[2][1],
         coordinates[3][1]
       ) - sy;
-    return { sx, sy, sw, sh };
+
+    const topLeft = [sx, sy];
+    const topRight = [sx + sw, sy];
+    const bottomLeft = [sx, sy + sh];
+    const bottomRight = [sx + sw, sy + sh];
+    // return { sx, sy, sw, sh }; uncomment to use non wasm crop function (cropImage())
+    return [topLeft, topRight, bottomLeft, bottomRight];
   };
 
   const fetchSessionId = async (clientId) => {
@@ -716,65 +776,75 @@ const VeryfiLens = (function () {
       clearInterval(intervalRef);
     };
   };
-  const setBlurStatus = (blur, variance) => {
-    return {
-      blur,
-      variance,
-    };
-  };
 
-  const isBlurry = async (image) => {
-    console.log("[EVENT] Checking for blur");
-    const src = cv.imread(image);
-    let refVariance;
-    let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
-
-    const grayscale = new cv.Mat();
-    const refGrayscale = new cv.Mat();
-
-    cv.cvtColor(src, grayscale, cv.COLOR_RGBA2GRAY);
-    cv.cvtColor(whiteCanvas, refGrayscale, cv.COLOR_RGBA2GRAY);
-
-    const laplacian = new cv.Mat();
-    const refLaplacian = new cv.Mat();
-
-    cv.Laplacian(grayscale, laplacian, cv.CV_8U);
-    cv.Laplacian(refGrayscale, refLaplacian, cv.CV_8U);
-
-    const meanStdDev = new cv.Mat();
-    const laplacianMean = new cv.Mat();
-    const refMeanStdDev = new cv.Mat();
-    const refLaplacianMean = new cv.Mat();
-
-    cv.meanStdDev(laplacian, laplacianMean, meanStdDev);
-    cv.meanStdDev(refLaplacian, refLaplacianMean, refMeanStdDev);
-
-    variance = meanStdDev.data64F[0] * 10;
-    refVariance = refMeanStdDev.data64F[0] * 10;
-
-    console.log("variance", variance);
-    console.log("reference variance", refVariance);
-
-    grayscale.delete();
-    laplacian.delete();
-    meanStdDev.delete();
-    laplacianMean.delete();
-    refGrayscale.delete();
-    refLaplacian.delete();
-    refMeanStdDev.delete();
-    refLaplacianMean.delete();
-    whiteCanvas.delete();
-
-    if (variance > 95) {
+  const setBlurStatus = (variance) => {
+    if (variance >= 10) {
       blurStatus = false;
-      setBlurStatus(blurStatus, variance);
-      return;
+      return { blurStatus, variance };
+    } else if (variance < 0) {
+      blurStatus = false;
+      console.log(
+        "Variance is lower than 0, Which means image was not cropped and did not pass through blur detection"
+      );
+      return { blurStatus, variance };
     } else {
       blurStatus = true;
-      setBlurStatus(blurStatus, variance);
-      return;
+      return { blurStatus, variance };
     }
   };
+
+  // const isBlurry = async (image) => {
+  //   console.log("[EVENT] Checking for blur");
+  //   const src = cv.imread(image);
+  //   let refVariance;
+  //   let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
+
+  //   const grayscale = new cv.Mat();
+  //   const refGrayscale = new cv.Mat();
+
+  //   cv.cvtColor(src, grayscale, cv.COLOR_RGBA2GRAY);
+  //   cv.cvtColor(whiteCanvas, refGrayscale, cv.COLOR_RGBA2GRAY);
+
+  //   const laplacian = new cv.Mat();
+  //   const refLaplacian = new cv.Mat();
+
+  //   cv.Laplacian(grayscale, laplacian, cv.CV_8U);
+  //   cv.Laplacian(refGrayscale, refLaplacian, cv.CV_8U);
+
+  //   const meanStdDev = new cv.Mat();
+  //   const laplacianMean = new cv.Mat();
+  //   const refMeanStdDev = new cv.Mat();
+  //   const refLaplacianMean = new cv.Mat();
+
+  //   cv.meanStdDev(laplacian, laplacianMean, meanStdDev);
+  //   cv.meanStdDev(refLaplacian, refLaplacianMean, refMeanStdDev);
+
+  //   variance = meanStdDev.data64F[0] * 10;
+  //   refVariance = refMeanStdDev.data64F[0] * 10;
+
+  //   console.log("variance", variance);
+  //   console.log("reference variance", refVariance);
+
+  //   grayscale.delete();
+  //   laplacian.delete();
+  //   meanStdDev.delete();
+  //   laplacianMean.delete();
+  //   refGrayscale.delete();
+  //   refLaplacian.delete();
+  //   refMeanStdDev.delete();
+  //   refLaplacianMean.delete();
+  //   whiteCanvas.delete();
+
+  //   if (variance > 88) {
+  //     blurStatus = false;
+  //     setBlurStatus(blurStatus, variance);
+  //     return;
+  //   } else {
+  //     blurStatus = true;
+  //     setBlurStatus(blurStatus, variance);
+  //     return;
+  //   }
+  // };
 
   return {
     init: async (session) => {
@@ -821,6 +891,8 @@ const VeryfiLens = (function () {
       boxRef = document.getElementById("veryfi-box-ref");
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
       startLens();
+      wasmWrapper = new WasmWrapper();
+      await wasmWrapper.initialize();
     },
     initWasm: async (session) => {
       isDocumentProcess = true;
@@ -868,7 +940,6 @@ const VeryfiLens = (function () {
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
       startWasm();
     },
-
     initWasmLong: async (session) => {
       isStitchingProcess = false;
       const fp = await FingerprintID.load();
@@ -915,7 +986,6 @@ const VeryfiLens = (function () {
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
       startWasmLong();
     },
-
     startCamera: () => {
       console.log("[EVENT] startCamera");
       startLens();
@@ -937,7 +1007,7 @@ const VeryfiLens = (function () {
     },
     capture: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture");
-      const finalImage = await cropImage();
+      const finalImage = await socketCropWasm();
       setImage && setImage(finalImage);
       console.log("[EVENT] hasCoordinates: ", hasCoordinates);
       if (hasCoordinates) setIsDocument(true);
@@ -964,11 +1034,9 @@ const VeryfiLens = (function () {
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
-
     startStitching: async () => {
       isStitchingProcess = true;
     },
-
     createNewSession: async (clientId) => {
       await fetchSessionId(clientId);
       setClientId(clientId);
@@ -1019,7 +1087,7 @@ const VeryfiLens = (function () {
       return socketStatusesColors[value];
     },
     getBlurStatus: (setIsBlurry) => {
-      setIsBlurry(blurStatus);
+      setIsBlurry && setIsBlurry(blurStatus);
       return {
         blurStatus,
         variance,
@@ -1029,7 +1097,7 @@ const VeryfiLens = (function () {
       console.log("Cleaning");
       const box = boxRef;
       const video = videoRef;
-      const frame = frameRef
+      const frame = frameRef;
       const crop = cropImgRef;
       crop && releaseCanvas(crop);
       video?.pause();

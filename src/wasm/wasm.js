@@ -101,7 +101,7 @@ export class WasmWrapper {
     let outputBuffer = this.wasmModule.ccall("getStitchedImage", "int");
     let { data, blurLevel, outputHeight, outputWidth } =
       this.getResultFromBuffer(outputBuffer);
-    return { data, outputHeight, outputWidth };
+    return { data, blurLevel, outputHeight, outputWidth };
   }
 
   processDocument(bitmap, mode = "Document") {
@@ -121,6 +121,7 @@ export class WasmWrapper {
 
   cropWasm(bitmap, corners) {
     if (!this.loaded) return;
+    console.log('corners', corners)
     const buffer = this.setBitmapOnWASMMemory_(bitmap);
     let cornersPtr = this.wasmModule._malloc(4 * 2 * 4);
     let startIndex = cornersPtr / 4;
