@@ -121,7 +121,6 @@ export class WasmWrapper {
 
   cropWasm(bitmap, corners) {
     if (!this.loaded) return;
-    console.log('corners', corners)
     const buffer = this.setBitmapOnWASMMemory_(bitmap);
     let cornersPtr = this.wasmModule._malloc(4 * 2 * 4);
     let startIndex = cornersPtr / 4;
@@ -132,7 +131,6 @@ export class WasmWrapper {
       ["number", "number", "number", "number", "boolean"],
       [buffer, bitmap.width, bitmap.height, cornersPtr, true]
     );
-
     this.freeBuffer_(buffer);
     this.freeBuffer_(cornersPtr);
     return this.getResultFromBuffer(outputBuffer);

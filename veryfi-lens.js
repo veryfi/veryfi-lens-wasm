@@ -1,9 +1,6 @@
 import DeviceUUID from "./src/device-uuid.js";
 import FingerprintID from "./src/fingerprint-id.js";
 import { WasmWrapper } from "./src/wasm/wasm.js";
-let script = document.createElement("script");
-script.src = "./wasm/opencv.js";
-document.body.appendChild(script);
 
 const VeryfiLens = (function () {
   const DEFAULT_BOX_COlOR = "rgba(84, 192, 139, 0.6)";
@@ -14,6 +11,7 @@ const VeryfiLens = (function () {
   const MAX_SHAPE = 512.0;
   const SOCKET_URL = "wss://lens.veryfi.com/ws/crop";
   const VALIDATE_URL = "https://lens.veryfi.com/rest/validate_partner";
+  const PROCESS_URL = "https://lens.veryfi.com/rest/process"
   const SOCKET_STATUSES = [
     {
       value: 0,
@@ -70,31 +68,13 @@ const VeryfiLens = (function () {
   let shouldUpdatePreview = false;
 
   const releaseCanvas = (canvas) => {
+    if (canvas) {
     canvas.width = 1;
     canvas.height = 1;
     const ctx = canvas.getContext("2d");
-    ctx && ctx.clearRect(0, 0, 1, 1);
+    ctx && ctx.clearRect(0, 0, 1, 1);}
   };
 
-  function waitForElement(selector) {
-    return new Promise((resolve) => {
-      if (document.querySelector(selector)) {
-        return resolve(document.querySelector(selector));
-      }
-
-      const observer = new MutationObserver((mutations) => {
-        if (document.querySelector(selector)) {
-          resolve(document.querySelector(selector));
-          observer.disconnect();
-        }
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-      });
-    });
-  }
 
   const setClientId = (key) => {
     clientId = key;
@@ -316,7 +296,9 @@ const VeryfiLens = (function () {
     if (isDocumentProcess) {
       mode = "Document";
     } else
-      isStitchingProcess ? (mode = "Stitcher") : (mode = "StitcherProcess");
+      if (isStitchingProcess) {
+        (mode = "Stitcher") 
+      } else (mode = "StitcherProcess");
     if (videoRef) {
       let rCorners;
       const video = videoRef;
@@ -366,6 +348,7 @@ const VeryfiLens = (function () {
       }
     }
   };
+
 
   const getLongImage = async () => {
     let wasmOutput;
@@ -426,10 +409,11 @@ const VeryfiLens = (function () {
       width,
       height
     );
-
-    while (container?.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+      if (container) {
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
+      }
     container.appendChild(canvas);
   }
 
@@ -440,7 +424,7 @@ const VeryfiLens = (function () {
       [x2, y2],
       [x3, y3],
     ];
-    // console.log(coordinates)
+    console.log('coordinates',coordinates)
   }
   function logLongDocument(
     status,
@@ -546,6 +530,7 @@ const VeryfiLens = (function () {
       );
     } else {
       // If there are no coordinates, use the fullSizeImage as it is.
+      console.log('[Event] Using full size image')
       const canvas = new OffscreenCanvas(
         fullSizeImage.width,
         fullSizeImage.height
@@ -565,6 +550,7 @@ const VeryfiLens = (function () {
         outputHeight: fullSizeImage.height,
       };
     }
+
     console.log(wasmOutput);
     const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
     console.log(outputWidth, outputHeight);
@@ -586,75 +572,6 @@ const VeryfiLens = (function () {
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
-
-  // const cropImage = async () => {
-  //   const video = videoRef;
-  //   const cropImgCanvas = cropImgRef;
-  //   if (fullSizeImage) {
-  //     console.log("[Event] Full size image is set");
-  //     if (hasCoordinates) {
-  //       setIsDocument(true);
-  //       let { sx, sy, sw, sh } = getCropLimits(coordinates);
-  //       const scaleWidth = fullSizeImage.width / video.videoWidth;
-  //       const scaleHeight = fullSizeImage.height / video.videoHeight;
-
-  //       sx = sx * scaleWidth;
-  //       sy = sy * scaleHeight;
-  //       sw = sw * scaleWidth;
-  //       sh = sh * scaleHeight;
-
-  //       cropImgCanvas.width = sw;
-  //       cropImgCanvas.height = sh;
-  //       const ctx = cropImgCanvas.getContext("2d");
-
-  //       if (ctx) {
-  //         ctx.save();
-  //         ctx.drawImage(fullSizeImage, sx, sy, sw, sh, 0, 0, sw, sh);
-  //         ctx.restore();
-  //       }
-  //     } else {
-  //       cropImgCanvas.width = video.videoWidth;
-  //       cropImgCanvas.height = video.videoHeight;
-  //       const ctx = cropImgCanvas.getContext("2d");
-  //       if (ctx) {
-  //         ctx.save();
-  //         ctx.drawImage(fullSizeImage, 0, 0);
-  //         ctx.restore();
-  //       }
-  //     }
-  //   } else {
-  //     if (hasCoordinates) {
-  //       setIsDocument(true);
-  //       let { sx, sy, sw, sh } = getCropLimits(coordinates);
-  //       cropImgCanvas.width = sw;
-  //       cropImgCanvas.height = sh;
-  //       const ctx = cropImgCanvas.getContext("2d");
-  //       if (ctx) {
-  //         ctx.save();
-  //         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-  //         ctx.restore();
-  //       }
-  //     } else {
-  //       cropImgCanvas.width = video.videoWidth;
-  //       cropImgCanvas.height = video.videoHeight;
-  //       const ctx = cropImgCanvas.getContext("2d");
-  //       if (ctx) {
-  //         ctx.save();
-  //         ctx.drawImage(video, 0, 0);
-  //         ctx.restore();
-  //       }
-  //     }
-  //   }
-
-  //   waitForElement("#blur-detector").then(() => {
-  //     isBlurry(cropImgCanvas);
-  //   });
-
-  //   image = cropImgCanvas;
-  //   const imgString = cropImgCanvas.toDataURL("image/jpeg");
-
-  //   return imgString.split("data:image/jpeg;base64,")[1];
-  // };
 
   const getCropLimits = (coordinates) => {
     const sx = Math.min(
@@ -719,7 +636,7 @@ const VeryfiLens = (function () {
     clearInterval(intervalRef);
   };
   const stopWasm = () => {
-    videoRef.srcObject.getTracks().forEach((track) => track.stop());
+    videoRef && videoRef.srcObject.getTracks().forEach((track) => track.stop());
     clearInterval(intervalRef);
   };
 
@@ -777,6 +694,14 @@ const VeryfiLens = (function () {
     };
   };
 
+  const startUploadWasm = async () => {
+    wasmWrapper = new WasmWrapper();
+    await wasmWrapper.initialize();
+    if (wasmWrapper) {
+      wasmWrapper.setDocumentCallback(logDocument);
+    }
+  }
+
   const setBlurStatus = (variance) => {
     if (variance >= 10) {
       blurStatus = false;
@@ -792,59 +717,6 @@ const VeryfiLens = (function () {
       return { blurStatus, variance };
     }
   };
-
-  // const isBlurry = async (image) => {
-  //   console.log("[EVENT] Checking for blur");
-  //   const src = cv.imread(image);
-  //   let refVariance;
-  //   let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
-
-  //   const grayscale = new cv.Mat();
-  //   const refGrayscale = new cv.Mat();
-
-  //   cv.cvtColor(src, grayscale, cv.COLOR_RGBA2GRAY);
-  //   cv.cvtColor(whiteCanvas, refGrayscale, cv.COLOR_RGBA2GRAY);
-
-  //   const laplacian = new cv.Mat();
-  //   const refLaplacian = new cv.Mat();
-
-  //   cv.Laplacian(grayscale, laplacian, cv.CV_8U);
-  //   cv.Laplacian(refGrayscale, refLaplacian, cv.CV_8U);
-
-  //   const meanStdDev = new cv.Mat();
-  //   const laplacianMean = new cv.Mat();
-  //   const refMeanStdDev = new cv.Mat();
-  //   const refLaplacianMean = new cv.Mat();
-
-  //   cv.meanStdDev(laplacian, laplacianMean, meanStdDev);
-  //   cv.meanStdDev(refLaplacian, refLaplacianMean, refMeanStdDev);
-
-  //   variance = meanStdDev.data64F[0] * 10;
-  //   refVariance = refMeanStdDev.data64F[0] * 10;
-
-  //   console.log("variance", variance);
-  //   console.log("reference variance", refVariance);
-
-  //   grayscale.delete();
-  //   laplacian.delete();
-  //   meanStdDev.delete();
-  //   laplacianMean.delete();
-  //   refGrayscale.delete();
-  //   refLaplacian.delete();
-  //   refMeanStdDev.delete();
-  //   refLaplacianMean.delete();
-  //   whiteCanvas.delete();
-
-  //   if (variance > 88) {
-  //     blurStatus = false;
-  //     setBlurStatus(blurStatus, variance);
-  //     return;
-  //   } else {
-  //     blurStatus = true;
-  //     setBlurStatus(blurStatus, variance);
-  //     return;
-  //   }
-  // };
 
   return {
     init: async (session) => {
@@ -986,6 +858,39 @@ const VeryfiLens = (function () {
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
       startWasmLong();
     },
+    initUploadWasm: async (session, imageData) => {
+      const fp = await FingerprintID.load();
+      device_fingerprint = (await fp.get()).visitorId;
+      userAgent = navigator.userAgent;
+      device_uuid = new DeviceUUID(userAgent).get();
+      console.log(
+        "[EVENT] Device ID",
+        getDeviceID(device_uuid, device_fingerprint)
+      );
+      await startUploadWasm();
+    },
+
+    processDocument: async (
+      image,
+      username,
+      clientId,
+      apiKey,
+    ) => {
+      console.log('[EVENT] Processing document upload')
+      const processDocumentUrl = PROCESS_URL;
+      const requestOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: image,
+          username,
+          api_key: apiKey,
+          client_id: clientId,
+        }),
+      };
+      return fetch(processDocumentUrl, requestOptions).then((response) => response.json());
+    },
+
     startCamera: () => {
       console.log("[EVENT] startCamera");
       startLens();
@@ -1034,6 +939,48 @@ const VeryfiLens = (function () {
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
+
+    captureUploaded: async (imageData) => {
+      return await createImageBitmap(imageData).then((bitmap) => {
+          const wasmOutput = wasmWrapper.cropDocument(bitmap);
+          const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+  
+          // If a document is detected and cropped
+          if (outputWidth > 0 && outputHeight > 0) {
+              const width = outputWidth;
+              const height = outputHeight;
+              const cropImgCanvas = document.createElement("canvas");
+              cropImgCanvas.height = height;
+              cropImgCanvas.width = width;
+              const ctx = cropImgCanvas.getContext("2d");
+              const imageData = new ImageData(data, width, height);
+              ctx.putImageData(imageData, 0, 0);
+              setBlurStatus(blurLevel);
+              stopWasm();
+  
+              const imgString = cropImgCanvas.toDataURL("image/jpeg");
+              image = cropImgCanvas;
+              releaseCanvas(boxRef);
+              setIsDocument(true);
+              coordinates = [];
+              return imgString.split("data:image/jpeg;base64,")[1];
+          } else {
+              // Return the original, uncropped image
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(imageData);
+                reader.onload = function() {
+                    const base64Image = reader.result.split(',')[1];
+                    resolve(base64Image);
+                };
+                reader.onerror = function(error) {
+                    reject(error);
+                };
+            });
+          }
+      });
+  },
+  
     startStitching: async () => {
       isStitchingProcess = true;
     },
@@ -1072,7 +1019,7 @@ const VeryfiLens = (function () {
       lensSessionKey = key;
     },
     getSocketStatus: () => {
-      const value = ws?.readyState || 4;
+      const value = ws.readyState || 4;
       return SOCKET_STATUSES[value];
     },
     getSocketStatusColor: () => {
@@ -1083,7 +1030,8 @@ const VeryfiLens = (function () {
         "red",
         "purple",
       ];
-      const value = ws?.readyState || 4;
+        
+      const value = ws.readyState || 4;
       return socketStatusesColors[value];
     },
     getBlurStatus: (setIsBlurry) => {
@@ -1100,16 +1048,26 @@ const VeryfiLens = (function () {
       const frame = frameRef;
       const crop = cropImgRef;
       crop && releaseCanvas(crop);
-      video?.pause();
-      video?.removeAttribute("src");
-      video?.load();
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
       box && releaseCanvas(box);
       frame && releaseCanvas(frame);
-      videoRef?.remove();
-      frameRef?.remove();
-      boxRef?.remove();
-      cropImgRef?.remove();
+      videoRef && videoRef.remove();
+      frameRef && frameRef.remove();
+      boxRef && boxRef.remove();
+      cropImgRef && cropImgRef.remove();
       setIsDocument(false);
+    },
+    getDeviceData: () => {
+      return {
+        uuid: device_uuid,
+        // fp: device_fingerprint,
+        // source: "lens.web",
+        // data: navigator
+      }
     },
   };
 })();
