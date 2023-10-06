@@ -236,7 +236,6 @@ const VeryfiLens = (function () {
     const camHeight = 1920;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
-      console.log("User agent is present");
       navigator.mediaDevices
         .getUserMedia({
           video: {
@@ -262,7 +261,6 @@ const VeryfiLens = (function () {
     const camHeight = 4096;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
-      console.log("User agent is present");
       navigator.mediaDevices
         .getUserMedia({
           video: {
@@ -424,7 +422,7 @@ const VeryfiLens = (function () {
       [x2, y2],
       [x3, y3],
     ];
-    console.log('coordinates',coordinates)
+    // console.log('coordinates',coordinates)
   }
   function logLongDocument(
     status,
@@ -498,9 +496,7 @@ const VeryfiLens = (function () {
         outputHeight: fullSizeImage.height,
       };
     }
-    console.log(wasmOutput);
     const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-    console.log(outputWidth, outputHeight);
     const width = outputWidth;
     const height = outputHeight;
     const cropImgCanvas = cropImgRef;
@@ -551,9 +547,7 @@ const VeryfiLens = (function () {
       };
     }
 
-    console.log(wasmOutput);
     const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-    console.log(outputWidth, outputHeight);
     const width = outputWidth;
     const height = outputHeight;
     const cropImgCanvas = cropImgRef;
@@ -944,7 +938,6 @@ const VeryfiLens = (function () {
       return await createImageBitmap(imageData).then((bitmap) => {
           const wasmOutput = wasmWrapper.cropDocument(bitmap);
           const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-  
           // If a document is detected and cropped
           if (outputWidth > 0 && outputHeight > 0) {
               const width = outputWidth;
@@ -1062,6 +1055,10 @@ const VeryfiLens = (function () {
       setIsDocument(false);
     },
     getDeviceData: () => {
+      if (!device_uuid) {
+        userAgent = navigator.userAgent;
+        device_uuid = new DeviceUUID(userAgent).get();
+      }
       return {
         uuid: device_uuid,
         // fp: device_fingerprint,
