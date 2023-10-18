@@ -12,8 +12,8 @@ export class WasmWrapper {
     this.documentDetectorLoaded = false;
     this.stitcherLoaded = false;
     this.firstRun = true;
+    this.client_id = ""
   }
-
   /** @private */
   selectDir(useSimd) {
     const userAgent = navigator.userAgent;
@@ -22,7 +22,8 @@ export class WasmWrapper {
     return "simd";
   }
 
-  async initialize() {
+  async initialize(client_id) {
+    this.client_id = client_id
     const features = await this.checkFeatures_();
     const { useSimd, useThreads } = features;
     if (!useThreads) {
@@ -43,7 +44,7 @@ export class WasmWrapper {
       "initDocumentDetector",
       null,
       ["string"],
-      ["vrf1pF9CSF19wGpasWeTsfVueKUPesnMJTMVp58"]
+      [this.client_id]
     );
     let documentCallback = this.wasmModule.addFunction(callback, "viiiiiiiii");
     this.documentDetectorLoaded = this.wasmModule.ccall(
@@ -60,7 +61,7 @@ export class WasmWrapper {
       "initStitcher",
       null,
       ["string"],
-      ["vrf1pF9CSF19wGpasWeTsfVueKUPesnMJTMVp58"]
+      [this.client_id]
     );
     let stitcherCallback = this.wasmModule.addFunction(callback, "viiiiiiiiii");
     // viiiiiiiii

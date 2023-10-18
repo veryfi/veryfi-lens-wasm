@@ -412,7 +412,7 @@ const VeryfiLens = (function () {
           container.removeChild(container.firstChild);
         }
       }
-    container.appendChild(canvas);
+    if (container) container.appendChild(canvas);
   }
 
   function logDocument(status, x0, y0, x1, y1, x2, y2, x3, y3) {
@@ -645,9 +645,9 @@ const VeryfiLens = (function () {
     return `${uuid + fingerprint}`.replace(/\-/g, "");
   };
 
-  const startWasm = async () => {
+  const startWasm = async (client_id) => {
     wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize();
+    await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
       getVideoWasm();
       requestAnimationFrame(displayVideo);
@@ -659,9 +659,9 @@ const VeryfiLens = (function () {
       };
     }
   };
-  const startWasmLong = async () => {
+  const startWasmLong = async (client_id) => {
     wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize();
+    await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
       getVideoWasmLong();
       requestAnimationFrame(displayVideo);
@@ -688,9 +688,9 @@ const VeryfiLens = (function () {
     };
   };
 
-  const startUploadWasm = async () => {
+  const startUploadWasm = async (client_id) => {
     wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize();
+    await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
       wasmWrapper.setDocumentCallback(logDocument);
     }
@@ -713,7 +713,7 @@ const VeryfiLens = (function () {
   };
 
   return {
-    init: async (session) => {
+    init: async (session, client_id) => {
       const fp = await FingerprintID.load();
       device_fingerprint = (await fp.get()).visitorId;
       userAgent = navigator.userAgent;
@@ -722,7 +722,8 @@ const VeryfiLens = (function () {
         "[EVENT] Device ID",
         getDeviceID(device_uuid, device_fingerprint)
       );
-      if (session) lensSessionKey = session;
+      if (session) {
+      lensSessionKey = session;
       const container = document.getElementById("veryfi-container");
       const generalClasses = "absolute sm:rounded-md h-full max-w-none";
       const frameClasses = "absolute invisible sm:rounded-md h-full max-w-none";
@@ -758,9 +759,18 @@ const VeryfiLens = (function () {
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
       startLens();
       wasmWrapper = new WasmWrapper();
-      await wasmWrapper.initialize();
+      if (client_id) {
+      await wasmWrapper.initialize(client_id);
+      } else {
+        console.log('No client id provided')
+        return
+      }
+    } else { 
+      console.log('No session token provided')
+      return
+    }
     },
-    initWasm: async (session) => {
+    initWasm: async (session, client_id) => {
       isDocumentProcess = true;
       const fp = await FingerprintID.load();
       device_fingerprint = (await fp.get()).visitorId;
@@ -771,7 +781,8 @@ const VeryfiLens = (function () {
         getDeviceID(device_uuid, device_fingerprint)
       );
 
-      if (session) lensSessionKey = session;
+      if (session) { 
+      lensSessionKey = session;
       const container = document.getElementById("veryfi-container");
       const generalClasses = "absolute sm:rounded-md h-full max-w-none";
       const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
@@ -804,9 +815,18 @@ const VeryfiLens = (function () {
       frameRef = document.getElementById("veryfi-frame-ref");
       boxRef = document.getElementById("veryfi-box-ref");
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
-      startWasm();
+      if (client_id) {
+      startWasm(client_id);
+      } else { 
+        console.log('No client id provided')
+        return
+      }
+      } else { 
+        console.log('No session token provided')
+        return
+      }
     },
-    initWasmLong: async (session) => {
+    initWasmLong: async (session, client_id) => {
       isStitchingProcess = false;
       const fp = await FingerprintID.load();
       device_fingerprint = (await fp.get()).visitorId;
@@ -817,7 +837,7 @@ const VeryfiLens = (function () {
         getDeviceID(device_uuid, device_fingerprint)
       );
 
-      if (session) lensSessionKey = session;
+      if (session) { lensSessionKey = session;
       const container = document.getElementById("veryfi-container");
       const generalClasses = "absolute sm:rounded-md h-full max-w-none";
       const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
@@ -850,9 +870,19 @@ const VeryfiLens = (function () {
       frameRef = document.getElementById("veryfi-frame-ref");
       boxRef = document.getElementById("veryfi-box-ref");
       cropImgRef = document.getElementById("veryfi-crop-img-ref");
-      startWasmLong();
+      if (client_id) {
+      startWasmLong(client_id);
+      } else { 
+        console.log('No client id provided')
+        return
+      }
+    } else { 
+      console.log('No session token provided')
+      return
+    }
     },
-    initUploadWasm: async (session, imageData) => {
+    initUploadWasm: async (session, client_id) => {
+      if (session) {
       const fp = await FingerprintID.load();
       device_fingerprint = (await fp.get()).visitorId;
       userAgent = navigator.userAgent;
@@ -861,28 +891,16 @@ const VeryfiLens = (function () {
         "[EVENT] Device ID",
         getDeviceID(device_uuid, device_fingerprint)
       );
-      await startUploadWasm();
-    },
-
-    processDocument: async (
-      image,
-      username,
-      clientId,
-      apiKey,
-    ) => {
-      console.log('[EVENT] Processing document upload')
-      const processDocumentUrl = PROCESS_URL;
-      const requestOptions = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: image,
-          username,
-          api_key: apiKey,
-          client_id: clientId,
-        }),
-      };
-      return fetch(processDocumentUrl, requestOptions).then((response) => response.json());
+      if (client_id) {
+      await startUploadWasm(client_id);
+      } else {
+        console.log('No client id provided')
+        return
+      }
+      } else { 
+        console.log('No session token provided')
+        return
+      }
     },
 
     startCamera: () => {
@@ -904,6 +922,7 @@ const VeryfiLens = (function () {
 
       clearInterval(intervalRef);
     },
+
     capture: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture");
       const finalImage = await socketCropWasm();
