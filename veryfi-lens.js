@@ -210,14 +210,16 @@ const VeryfiLens = (function () {
 
   const getVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
+    const camWidth = 1440;
+    const camHeight = 2560;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { ideal: 2160 },
-            height: { ideal: 4096 },
+            width:  { camWidth },
+            height: { camHeight },
           },
         })
         .then((stream) => {
@@ -232,8 +234,11 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasmLong = () => {
-    const camWidth = 1080;
-    const camHeight = 1920;
+    const isIOS = () => {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+    const camWidth = 1440;
+    const camHeight = 2560;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
       navigator.mediaDevices
@@ -241,8 +246,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { ideal: camWidth },
-            height: { ideal: camHeight },
+            width:  { camWidth },
+            height: { camHeight },
           },
         })
         .then((stream) => {
@@ -257,8 +262,11 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasm = () => {
-    const camWidth = 2160;
-    const camHeight = 4096;
+    const isIOS = () => {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+    const camWidth = 1440;
+    const camHeight = 2560;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
       navigator.mediaDevices
@@ -266,8 +274,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { ideal: camWidth },
-            height: { ideal: camHeight },
+            width:  { camWidth },
+            height: { camHeight },
           },
         })
         .then((stream) => {
@@ -946,7 +954,7 @@ const VeryfiLens = (function () {
     captureLong: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture long");
       finalImage = await getLongImage();
-      setIsEditing && setImage(finalImage);
+      setImage && setImage(finalImage);
       stopWasm();
       setIsDocument(true);
       setIsEditing && setIsEditing(true);
