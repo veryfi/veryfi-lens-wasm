@@ -1,6 +1,7 @@
 import DeviceUUID from "./src/device-uuid.js";
-import FingerprintID from "./src/fingerprint-id.js";
 import { WasmWrapper } from "./src/wasm/wasm.js";
+import UAParser from "./src/ua-parser.js";
+import gatherBrowserData from "./src/device-data.js";
 
 const VeryfiLens = (function () {
   const DEFAULT_BOX_COlOR = "rgba(84, 192, 139, 0.6)";
@@ -11,7 +12,7 @@ const VeryfiLens = (function () {
   const MAX_SHAPE = 512.0;
   const SOCKET_URL = "wss://lens.veryfi.com/ws/crop";
   const VALIDATE_URL = "https://lens.veryfi.com/rest/validate_partner";
-  const PROCESS_URL = "https://lens.veryfi.com/rest/process"
+  const PROCESS_URL = "https://lens.veryfi.com/rest/process";
   const SOCKET_STATUSES = [
     {
       value: 0,
@@ -35,7 +36,6 @@ const VeryfiLens = (function () {
     },
   ];
 
-  let device_fingerprint;
   let boxRef = null;
   let cropImgRef = null;
   let frameRef = null;
@@ -69,12 +69,12 @@ const VeryfiLens = (function () {
 
   const releaseCanvas = (canvas) => {
     if (canvas) {
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext("2d");
-    ctx && ctx.clearRect(0, 0, 1, 1);}
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      ctx && ctx.clearRect(0, 0, 1, 1);
+    }
   };
-
 
   const setClientId = (key) => {
     clientId = key;
@@ -197,7 +197,7 @@ const VeryfiLens = (function () {
       if (ws.readyState === 1) {
         isSocketBusy = true;
         ws.send(
-          getDeviceID(device_uuid, device_fingerprint) +
+          getDeviceID(device_uuid) +
             LENS_DEVICE_ID_SEPARATOR +
             lensSessionKey +
             LENS_SESSION_KEY_SEPARATOR +
@@ -210,15 +210,15 @@ const VeryfiLens = (function () {
 
   const getVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
-    const camWidth = 1440;
-    const camHeight = 2560;
+    const camWidth = 2160;
+    const camHeight = 4096;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width:  { camWidth },
+            width: { camWidth },
             height: { camHeight },
           },
         })
@@ -234,9 +234,9 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasmLong = () => {
-    const isIOS = () => {
-      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    };
+    // const isIOS = () => {
+    //   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // };
     const camWidth = 1440;
     const camHeight = 2560;
     const isDesktop = window.screen.width > window.screen.height;
@@ -246,7 +246,7 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width:  { camWidth },
+            width: { camWidth },
             height: { camHeight },
           },
         })
@@ -262,11 +262,13 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasm = () => {
-    const isIOS = () => {
-      return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    };
+    // const isIOS = () => {
+    //   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // };
     const camWidth = 1440;
     const camHeight = 2560;
+    // const camWidth = 2560;
+    // const camHeight = 1080;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
       navigator.mediaDevices
@@ -274,7 +276,7 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width:  { camWidth },
+            width: { camWidth },
             height: { camHeight },
           },
         })
@@ -289,6 +291,32 @@ const VeryfiLens = (function () {
     } else console.log("No user agent");
   };
 
+  const getCCVideo = () => {
+    const isDesktop = window.screen.width > window.screen.height;
+    const camWidth = 1440;
+    const camHeight = 2560;
+    if (navigator) {
+      navigator.mediaDevices
+        .getUserMedia({
+          video: {
+            aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+            facingMode: "environment",
+            width: { camWidth },
+            height: { camHeight },
+          },
+        })
+        .then((stream) => {
+          console.log("started stream");
+          const video = videoRef;
+          video.srcObject = stream;
+          wasmWrapper.setCardCallback(logCC);
+        })
+        .catch((err) => {
+          console.log(`[Event] Error: ${err}`);
+        });
+    }
+  };
+
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -301,10 +329,9 @@ const VeryfiLens = (function () {
   const sendWasm = async (mode) => {
     if (isDocumentProcess) {
       mode = "Document";
-    } else
-      if (isStitchingProcess) {
-        (mode = "Stitcher") 
-      } else (mode = "StitcherProcess");
+    } else if (isStitchingProcess) {
+      mode = "Stitcher";
+    } else mode = "StitcherProcess";
     if (videoRef) {
       let rCorners;
       const video = videoRef;
@@ -354,7 +381,6 @@ const VeryfiLens = (function () {
       }
     }
   };
-
 
   const getLongImage = async () => {
     let wasmOutput;
@@ -415,11 +441,11 @@ const VeryfiLens = (function () {
       width,
       height
     );
-      if (container) {
-        while (container.firstChild) {
-          container.removeChild(container.firstChild);
-        }
+    if (container) {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
       }
+    }
     if (container) container.appendChild(canvas);
   }
 
@@ -432,6 +458,7 @@ const VeryfiLens = (function () {
     ];
     // console.log('coordinates',coordinates)
   }
+
   function logLongDocument(
     status,
     x0,
@@ -534,7 +561,7 @@ const VeryfiLens = (function () {
       );
     } else {
       // If there are no coordinates, use the fullSizeImage as it is.
-      console.log('[Event] Using full size image')
+      console.log("[Event] Using full size image");
       const canvas = new OffscreenCanvas(
         fullSizeImage.width,
         fullSizeImage.height
@@ -637,6 +664,7 @@ const VeryfiLens = (function () {
     videoRef.srcObject.getTracks().forEach((track) => track.stop());
     clearInterval(intervalRef);
   };
+
   const stopWasm = () => {
     videoRef && videoRef.srcObject.getTracks().forEach((track) => track.stop());
     clearInterval(intervalRef);
@@ -649,8 +677,8 @@ const VeryfiLens = (function () {
     container.appendChild(element);
   };
 
-  const getDeviceID = (uuid, fingerprint) => {
-    return `${uuid + fingerprint}`.replace(/\-/g, "");
+  const getDeviceID = (uuid) => {
+    return `${uuid}`.replace(/\-/g, "");
   };
 
   const startWasm = async (client_id) => {
@@ -667,6 +695,7 @@ const VeryfiLens = (function () {
       };
     }
   };
+
   const startWasmLong = async (client_id) => {
     wasmWrapper = new WasmWrapper();
     await wasmWrapper.initialize(client_id);
@@ -702,6 +731,25 @@ const VeryfiLens = (function () {
     if (wasmWrapper) {
       wasmWrapper.setDocumentCallback(logDocument);
     }
+  };
+
+  const startWasmCC = async (client_id) => {
+    wasmWrapper = new WasmWrapper();
+    await wasmWrapper.initialize(client_id);
+    if (wasmWrapper) {
+      getVideoWasm();
+      requestAnimationFrame(displayVideo);
+      intervalRef = setInterval(() => {
+        sendWasm("Document");
+      }, INTERVAL);
+      return () => {
+        clearInterval(intervalRef);
+      };
+    }
+  };
+
+  const sendCC = () => {
+    
   }
 
   const setBlurStatus = (variance) => {
@@ -720,194 +768,253 @@ const VeryfiLens = (function () {
     }
   };
 
+  const flattenObject = (obj, parentKey = '', result = {}) => {
+    for (let key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        let propName = parentKey ? parentKey + '_' + key : key;
+  
+        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+          flattenObject(obj[key], propName, result);
+        } else {
+          result[propName] = obj[key];
+        }
+      }
+    }
+    return result;
+  }
+
+  const parseUA = () => {
+    const userAgentString = navigator.userAgent;
+    const parser = new UAParser(userAgentString);
+    let parserResults = parser.getResult && parser.getResult();
+    if (parserResults) {
+      return parserResults;
+    }
+  }
+
+  const getBrowserData = () => {
+    const browserData = gatherBrowserData();
+    return browserData;
+  }
+
   return {
+
     init: async (session, client_id) => {
-      const fp = await FingerprintID.load();
-      device_fingerprint = (await fp.get()).visitorId;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log(
-        "[EVENT] Device ID",
-        getDeviceID(device_uuid, device_fingerprint)
-      );
+      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
       if (session) {
-      lensSessionKey = session;
-      const container = document.getElementById("veryfi-container");
-      const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-      const frameClasses = "absolute invisible sm:rounded-md h-full max-w-none";
-      const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
+        lensSessionKey = session;
+        const container = document.getElementById("veryfi-container");
+        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
+        const frameClasses =
+          "absolute invisible sm:rounded-md h-full max-w-none";
+        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
 
-      createElement(
-        "canvas",
-        "veryfi-crop-img-ref",
-        [cropImgClasses],
-        container
-      );
-      createElement("canvas", "veryfi-frame-ref", frameClasses, container);
-      createElement(
-        "video",
-        "veryfi-video-ref",
-        `${generalClasses} z-10`,
-        container
-      );
-      createElement(
-        "canvas",
-        "veryfi-box-ref",
-        `${generalClasses} z-10`,
-        container
-      );
+        createElement(
+          "canvas",
+          "veryfi-crop-img-ref",
+          [cropImgClasses],
+          container
+        );
+        createElement("canvas", "veryfi-frame-ref", frameClasses, container);
+        createElement(
+          "video",
+          "veryfi-video-ref",
+          `${generalClasses} z-10`,
+          container
+        );
+        createElement(
+          "canvas",
+          "veryfi-box-ref",
+          `${generalClasses} z-10`,
+          container
+        );
 
-      videoRef = document.getElementById("veryfi-video-ref");
-      const video = videoRef;
-      video.playsInline = true;
-      video.preload = "metadata";
-      video.autoplay = true;
-      frameRef = document.getElementById("veryfi-frame-ref");
-      boxRef = document.getElementById("veryfi-box-ref");
-      cropImgRef = document.getElementById("veryfi-crop-img-ref");
-      startLens();
-      wasmWrapper = new WasmWrapper();
-      if (client_id) {
-      await wasmWrapper.initialize(client_id);
+        videoRef = document.getElementById("veryfi-video-ref");
+        const video = videoRef;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.autoplay = true;
+        frameRef = document.getElementById("veryfi-frame-ref");
+        boxRef = document.getElementById("veryfi-box-ref");
+        cropImgRef = document.getElementById("veryfi-crop-img-ref");
+        startLens();
+        wasmWrapper = new WasmWrapper();
+        if (client_id) {
+          await wasmWrapper.initialize(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
       } else {
-        console.log('No client id provided')
-        return
+        console.log("No session token provided");
+        return;
       }
-    } else { 
-      console.log('No session token provided')
-      return
-    }
     },
+
     initWasm: async (session, client_id) => {
       isDocumentProcess = true;
-      const fp = await FingerprintID.load();
-      device_fingerprint = (await fp.get()).visitorId;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log(
-        "[EVENT] Device ID",
-        getDeviceID(device_uuid, device_fingerprint)
-      );
+      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
 
-      if (session) { 
-      lensSessionKey = session;
-      const container = document.getElementById("veryfi-container");
-      const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-      const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
+      if (session) {
+        lensSessionKey = session;
+        const container = document.getElementById("veryfi-container");
+        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
+        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
 
-      createElement(
-        "canvas",
-        "veryfi-crop-img-ref",
-        [cropImgClasses],
-        container
-      );
-      createElement("canvas", "veryfi-frame-ref", `hidden`, container);
-      createElement(
-        "video",
-        "veryfi-video-ref",
-        `${generalClasses} z-10`,
-        container
-      );
-      createElement(
-        "canvas",
-        "veryfi-box-ref",
-        `${generalClasses} z-10`,
-        container
-      );
+        createElement(
+          "canvas",
+          "veryfi-crop-img-ref",
+          [cropImgClasses],
+          container
+        );
+        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
+        createElement(
+          "video",
+          "veryfi-video-ref",
+          `${generalClasses} z-10`,
+          container
+        );
+        createElement(
+          "canvas",
+          "veryfi-box-ref",
+          `${generalClasses} z-10`,
+          container
+        );
 
-      videoRef = document.getElementById("veryfi-video-ref");
-      const video = videoRef;
-      video.playsInline = true;
-      video.preload = "metadata";
-      video.autoplay = true;
-      frameRef = document.getElementById("veryfi-frame-ref");
-      boxRef = document.getElementById("veryfi-box-ref");
-      cropImgRef = document.getElementById("veryfi-crop-img-ref");
-      if (client_id) {
-      startWasm(client_id);
-      } else { 
-        console.log('No client id provided')
-        return
-      }
-      } else { 
-        console.log('No session token provided')
-        return
+        videoRef = document.getElementById("veryfi-video-ref");
+        const video = videoRef;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.autoplay = true;
+        frameRef = document.getElementById("veryfi-frame-ref");
+        boxRef = document.getElementById("veryfi-box-ref");
+        cropImgRef = document.getElementById("veryfi-crop-img-ref");
+        if (client_id) {
+          startWasm(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
+      } else {
+        console.log("No session token provided");
+        return;
       }
     },
+
     initWasmLong: async (session, client_id) => {
       isStitchingProcess = false;
-      const fp = await FingerprintID.load();
-      device_fingerprint = (await fp.get()).visitorId;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log(
-        "[EVENT] Device ID",
-        getDeviceID(device_uuid, device_fingerprint)
-      );
+      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
 
-      if (session) { lensSessionKey = session;
-      const container = document.getElementById("veryfi-container");
-      const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-      const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
+      if (session) {
+        lensSessionKey = session;
+        const container = document.getElementById("veryfi-container");
+        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
+        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
 
-      createElement(
-        "canvas",
-        "veryfi-crop-img-ref",
-        [cropImgClasses],
-        container
-      );
-      createElement("canvas", "veryfi-frame-ref", `hidden`, container);
-      createElement(
-        "video",
-        "veryfi-video-ref",
-        `${generalClasses} z-10`,
-        container
-      );
-      createElement(
-        "canvas",
-        "veryfi-box-ref",
-        `${generalClasses} z-10`,
-        container
-      );
+        createElement(
+          "canvas",
+          "veryfi-crop-img-ref",
+          [cropImgClasses],
+          container
+        );
+        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
+        createElement(
+          "video",
+          "veryfi-video-ref",
+          `${generalClasses} z-10`,
+          container
+        );
+        createElement(
+          "canvas",
+          "veryfi-box-ref",
+          `${generalClasses} z-10`,
+          container
+        );
 
-      videoRef = document.getElementById("veryfi-video-ref");
-      const video = videoRef;
-      video.playsInline = true;
-      video.preload = "metadata";
-      video.autoplay = true;
-      frameRef = document.getElementById("veryfi-frame-ref");
-      boxRef = document.getElementById("veryfi-box-ref");
-      cropImgRef = document.getElementById("veryfi-crop-img-ref");
-      if (client_id) {
-      startWasmLong(client_id);
-      } else { 
-        console.log('No client id provided')
-        return
+        videoRef = document.getElementById("veryfi-video-ref");
+        const video = videoRef;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.autoplay = true;
+        frameRef = document.getElementById("veryfi-frame-ref");
+        boxRef = document.getElementById("veryfi-box-ref");
+        cropImgRef = document.getElementById("veryfi-crop-img-ref");
+        if (client_id) {
+          startWasmLong(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
+      } else {
+        console.log("No session token provided");
+        return;
       }
-    } else { 
-      console.log('No session token provided')
-      return
-    }
     },
+
     initUploadWasm: async (session, client_id) => {
       if (session) {
-      const fp = await FingerprintID.load();
-      device_fingerprint = (await fp.get()).visitorId;
+        userAgent = navigator.userAgent;
+        device_uuid = new DeviceUUID(userAgent).get();
+        console.log("[EVENT] Device ID", getDeviceID(device_uuid));
+        if (client_id) {
+          await startUploadWasm(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
+      } else {
+        console.log("No session token provided");
+        return;
+      }
+    },
+
+    initWasmCC: async (session, client_id) => {
+      isDocumentProcess = true;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log(
-        "[EVENT] Device ID",
-        getDeviceID(device_uuid, device_fingerprint)
-      );
-      if (client_id) {
-      await startUploadWasm(client_id);
+      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
+
+      if (session) {
+        lensSessionKey = session;
+        const container = document.getElementById("veryfi-container");
+        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
+
+        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
+        createElement(
+          "video",
+          "veryfi-video-ref",
+          `${generalClasses} z-10`,
+          container
+        );
+        createElement(
+          "canvas",
+          "veryfi-box-ref",
+          `${generalClasses} z-10`,
+          container
+        );
+
+        videoRef = document.getElementById("veryfi-video-ref");
+        const video = videoRef;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.autoplay = true;
+        frameRef = document.getElementById("veryfi-frame-ref");
+        boxRef = document.getElementById("veryfi-box-ref");
+        if (client_id) {
+          startWasmCC(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
       } else {
-        console.log('No client id provided')
-        return
-      }
-      } else { 
-        console.log('No session token provided')
-        return
+        console.log("No session token provided");
+        return;
       }
     },
 
@@ -915,15 +1022,18 @@ const VeryfiLens = (function () {
       console.log("[EVENT] startCamera");
       startLens();
     },
+
     startCameraWasm: () => {
       console.log("[EVENT] startCamera");
       startWasm();
     },
+
     stopCamera: () => {
       console.log("[EVENT] stopCamera");
       stopLens();
       clearInterval(intervalRef);
     },
+
     stopCameraWasm: () => {
       console.log("[EVENT] stopCamera");
       stopWasm();
@@ -941,6 +1051,7 @@ const VeryfiLens = (function () {
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
+
     captureWasm: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture wasm");
       console.log("[EVENT] hasCoordinates: ", hasCoordinates);
@@ -951,6 +1062,7 @@ const VeryfiLens = (function () {
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
+
     captureLong: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture long");
       finalImage = await getLongImage();
@@ -963,85 +1075,98 @@ const VeryfiLens = (function () {
 
     captureUploaded: async (imageData) => {
       return await createImageBitmap(imageData).then((bitmap) => {
-          const wasmOutput = wasmWrapper.cropDocument(bitmap);
-          const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-          // If a document is detected and cropped
-          if (outputWidth > 0 && outputHeight > 0) {
-              const width = outputWidth;
-              const height = outputHeight;
-              const cropImgCanvas = document.createElement("canvas");
-              cropImgCanvas.height = height;
-              cropImgCanvas.width = width;
-              const ctx = cropImgCanvas.getContext("2d");
-              const imageData = new ImageData(data, width, height);
-              ctx.putImageData(imageData, 0, 0);
-              setBlurStatus(blurLevel);
-              stopWasm();
-  
-              const imgString = cropImgCanvas.toDataURL("image/jpeg");
-              image = cropImgCanvas;
-              releaseCanvas(boxRef);
-              setIsDocument(true);
-              coordinates = [];
-              return imgString.split("data:image/jpeg;base64,")[1];
-          } else {
-              // Return the original, uncropped image
-              return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(imageData);
-                reader.onload = function() {
-                    const base64Image = reader.result.split(',')[1];
-                    resolve(base64Image);
-                };
-                reader.onerror = function(error) {
-                    reject(error);
-                };
-            });
-          }
+        const wasmOutput = wasmWrapper.cropDocument(bitmap);
+        const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+        // If a document is detected and cropped
+        if (outputWidth > 0 && outputHeight > 0) {
+          const width = outputWidth;
+          const height = outputHeight;
+          const cropImgCanvas = document.createElement("canvas");
+          cropImgCanvas.height = height;
+          cropImgCanvas.width = width;
+          const ctx = cropImgCanvas.getContext("2d");
+          const imageData = new ImageData(data, width, height);
+          ctx.putImageData(imageData, 0, 0);
+          setBlurStatus(blurLevel);
+          stopWasm();
+
+          const imgString = cropImgCanvas.toDataURL("image/jpeg");
+          image = cropImgCanvas;
+          releaseCanvas(boxRef);
+          setIsDocument(true);
+          coordinates = [];
+          return imgString.split("data:image/jpeg;base64,")[1];
+        } else {
+          // Return the original, uncropped image
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(imageData);
+            reader.onload = function () {
+              const base64Image = reader.result.split(",")[1];
+              resolve(base64Image);
+            };
+            reader.onerror = function (error) {
+              reject(error);
+            };
+          });
+        }
       });
-  },
-  
+    },
+
     startStitching: async () => {
       isStitchingProcess = true;
     },
+
     createNewSession: async (clientId) => {
       await fetchSessionId(clientId);
       setClientId(clientId);
     },
+
     setUserAgent: (ua) => {
       userAgent = ua;
     },
+
     getBoxColor: () => {
       return boxColor;
     },
+
     setBoxColor: (color) => {
       boxColor = color;
     },
+
     getCroppedImage: () => {
       return image;
     },
+
     getCoordinates: () => {
       return coordinates;
     },
+
     getHasCoordinates: () => {
       return hasCoordinates;
     },
+
     getHasInit: () => {
       return hasInit;
     },
+
     getIsDocument: () => {
       return isDocument;
     },
+
     getLensSessionKey: () => {
       return lensSessionKey;
     },
+
     setLensSessionKey: (key) => {
       lensSessionKey = key;
     },
+
     getSocketStatus: () => {
       const value = ws.readyState || 4;
       return SOCKET_STATUSES[value];
     },
+
     getSocketStatusColor: () => {
       const socketStatusesColors = [
         "yellow",
@@ -1050,10 +1175,11 @@ const VeryfiLens = (function () {
         "red",
         "purple",
       ];
-        
+
       const value = ws.readyState || 4;
       return socketStatusesColors[value];
     },
+
     getBlurStatus: (setIsBlurry) => {
       setIsBlurry && setIsBlurry(blurStatus);
       return {
@@ -1061,6 +1187,7 @@ const VeryfiLens = (function () {
         variance,
       };
     },
+
     cleanCanvases: () => {
       console.log("Cleaning");
       const box = boxRef;
@@ -1081,18 +1208,22 @@ const VeryfiLens = (function () {
       cropImgRef && cropImgRef.remove();
       setIsDocument(false);
     },
-    getDeviceData: () => {
+
+    getDeviceData: async () => {
       if (!device_uuid) {
         userAgent = navigator.userAgent;
         device_uuid = new DeviceUUID(userAgent).get();
       }
+      const browserData = await getBrowserData();
+      const UAData = flattenObject(parseUA());
+
       return {
+        browser_fingerprint: {...UAData, ...browserData},
         uuid: device_uuid,
-        // fp: device_fingerprint,
-        // source: "lens.web",
-        // data: navigator
-      }
+        source: "lens.web",
+      };
     },
+
   };
 })();
 

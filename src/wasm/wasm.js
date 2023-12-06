@@ -1,5 +1,3 @@
-// import "https://unpkg.com/wasm-feature-detect/dist/umd/index.js"
-import wasmFeatureDetect from "../feature-detect.js";
 const processMethods = {
   Document: "findDocument",
   Stitcher: "stitchImage",
@@ -11,9 +9,35 @@ export class WasmWrapper {
     this.loaded = false;
     this.documentDetectorLoaded = false;
     this.stitcherLoaded = false;
+    this.cardDetectorLoaded = false;
     this.firstRun = true;
-    this.client_id = ""
+    this.client_id = "";
   }
+
+  async simd() {
+    return WebAssembly.validate(
+      new Uint8Array([
+        0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10,
+        1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+      ])
+    );
+  }
+
+  async threads() {
+    try {
+      const testBuffer = new Uint8Array([
+        0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3,
+        1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11,
+      ]);
+      if (typeof MessageChannel !== "undefined") {
+        new MessageChannel().port1.postMessage(new SharedArrayBuffer(1));
+      }
+      return WebAssembly.validate(testBuffer);
+    } catch (e) {
+      return false;
+    }
+  }
+
   /** @private */
   selectDir(useSimd) {
     const userAgent = navigator.userAgent;
@@ -23,7 +47,7 @@ export class WasmWrapper {
   }
 
   async initialize(client_id) {
-    this.client_id = client_id
+    this.client_id = client_id;
     const features = await this.checkFeatures_();
     const { useSimd, useThreads } = features;
     if (!useThreads) {
@@ -37,6 +61,27 @@ export class WasmWrapper {
     this.wasmModule = await createModule();
     this.loaded = true;
   }
+
+  // async initialize(client_id) {
+  //   this.client_id = client_id
+  //   const features = await this.checkFeatures_();
+  //   const { useSimd, useThreads } = features;
+
+  //   if (!useThreads) {
+  //     console.warn("Threads disabled, seems that the security requirements for SharedArrayBuffer are not met");
+  //     return;
+  //   }
+
+  //   // Select the appropriate directory based on features
+  //   const dir = this.selectDir(useSimd);
+
+  //   // Dynamically import the wasm module script
+  //   await import(`./${dir}/veryfi-wasm.js`);
+
+  //   // Create the Wasm module
+  //   this.wasmModule = await createModule();
+  //   this.loaded = true;
+  // }
 
   setDocumentCallback(callback) {
     if (!this.loaded || this.documentDetectorLoaded) return;
@@ -55,14 +100,26 @@ export class WasmWrapper {
     );
   }
 
-  setStitcherCallback(callback) {
-    if (!this.loaded || this.stitcherLoaded) return;
+  setCardCallback(callback) {
+    if (!this.loaded || this.cardDetectorLoaded) return;
     this.wasmModule.ccall(
-      "initStitcher",
+      "initCardDetector",
       null,
       ["string"],
       [this.client_id]
     );
+    let cardDetectorCallback = this.wasmModule.addFunction(callback, "viiiii");
+    this.cardDetectorLoaded = this.wasmModule.ccall(
+      "setCardDetectorCallback",
+      "boolean",
+      ["number"],
+      [cardDetectorCallback]
+    );
+  }
+
+  setStitcherCallback(callback) {
+    if (!this.loaded || this.stitcherLoaded) return;
+    this.wasmModule.ccall("initStitcher", null, ["string"], [this.client_id]);
     let stitcherCallback = this.wasmModule.addFunction(callback, "viiiiiiiiii");
     // viiiiiiiii
     // i -> StitcherResult
@@ -81,6 +138,20 @@ export class WasmWrapper {
       ["number"],
       [stitcherCallback]
     );
+  }
+
+  getCC(bitmap) {
+    if (!this.cardDetectorLoaded) return;
+    const buffer = this.setBitmapOnWASMMemory_(bitmap);
+    let outputBuffer = this.wasmModule.ccall(
+      "getCC",
+      "number",
+      ["number", "number", "number", "number", "number"],
+      [buffer, bitmap.width, bitmap.height, true]
+    );
+
+    this.freeBuffer_(buffer);
+    return this.getResultFromBuffer(outputBuffer);
   }
 
   cropDocument(bitmap) {
@@ -158,11 +229,21 @@ export class WasmWrapper {
     return { data, blurLevel, outputHeight, outputWidth };
   }
 
+  // /** @private */
+  // async checkFeatures_() {
+  //   let useSimd = await wasmFeatureDetect.simd();
+  //   let useThreads = await wasmFeatureDetect.threads();
+  //   console.log(`useSimd: ${useSimd}, useThreads: ${useThreads}`);
+  //   return { useSimd, useThreads };
+  // }
+
   /** @private */
   async checkFeatures_() {
-    let useSimd = await wasmFeatureDetect.simd();
-    let useThreads = await wasmFeatureDetect.threads();
-    console.log(`useSimd: ${useSimd}, useThreads: ${useThreads}`);
+    let useSimd = await this.simd();
+    let useThreads = await this.threads();
+    console.log(`SIMD available: ${useSimd}`);
+    console.log(`Threads available: ${useThreads}`)
+    !useThreads && console.log("Threads disabled, seems that the security requirements for SharedArrayBuffer are not met");
     return { useSimd, useThreads };
   }
 
@@ -213,8 +294,8 @@ export class WasmWrapper {
     }
     this.canvas.width = bitmap.width;
     this.canvas.height = bitmap.height;
-
-    const ctx = this.canvas.getContext("2d");
+    const contextOptions = { willReadFrequently: true };
+    const ctx = this.canvas.getContext("2d", contextOptions);
     ctx.drawImage(bitmap, 0, 0);
     return ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
   }
