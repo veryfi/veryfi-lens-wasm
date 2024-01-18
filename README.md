@@ -260,7 +260,7 @@ server.listen(port, host, () => {
 2.`npx local-ssl-proxy --key localhost-key.pem --cert localhost.pem --source 3001 --target 3000` (You will need local certificate, possible to make with `mkcert`)
 3. Go to `https://localhost:3001`
 
-For production build (any framework) or if you prefer using build instead of dev environment `wasm` directory should be in your `dist` directory (near your built index.html) and your server should use **https and ssl** and include following headers:
+For production build (any framework) or if you prefer using build instead of dev environment `wasm` directory should be in your `dist` directory (near your built index.html)
 
 ```
 'Cross-Origin-Opener-Policy', 'same-origin';

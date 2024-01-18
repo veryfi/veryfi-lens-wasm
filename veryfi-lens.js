@@ -1,7 +1,11 @@
-import DeviceUUID from "./src/device-uuid.js";
-import { WasmWrapper } from "./src/wasm/wasm.js";
-import UAParser from "./src/ua-parser.js";
-import gatherBrowserData from "./src/device-data.js";
+import DeviceUUID from "./wasm/device-uuid.js";
+import { WasmWrapper } from "./wasm/wasm.js";
+import gatherBrowserData from "./wasm/device-data.js";
+import UAParser from "./wasm/ua-parser.js";
+
+
+const script = document.createElement("script");
+script.src = "./wasm/opencv.js";
 
 const VeryfiLens = (function () {
   const DEFAULT_BOX_COlOR = "rgba(84, 192, 139, 0.6)";
@@ -125,7 +129,7 @@ const VeryfiLens = (function () {
             corner.map((cord) => cord / scale)
           );
           drawContours(rCorners);
-          coordinates = rCorners;
+          // coordinates = rCorners;
           break;
         default:
           isSocketBusy = false;
@@ -210,16 +214,16 @@ const VeryfiLens = (function () {
 
   const getVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
-    const camWidth = 2160;
-    const camHeight = 4096;
+    const camWidth = 720;
+    const camHeight = 1280;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { camWidth },
-            height: { camHeight },
+            width: isDesktop ? { ideal: 2560 } : { min: camWidth },
+            height: isDesktop ? { ideal: 1440 } : { min: camHeight },
           },
         })
         .then((stream) => {
@@ -234,11 +238,8 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasmLong = () => {
-    // const isIOS = () => {
-    //   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    // };
-    const camWidth = 1440;
-    const camHeight = 2560;
+    const camWidth = 720;
+    const camHeight = 1280;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
       navigator.mediaDevices
@@ -246,8 +247,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { camWidth },
-            height: { camHeight },
+            width: isDesktop ? { ideal: 2560 } : { min: 1080 },
+            height: isDesktop ? { ideal: 1440 } : { min: 1920 },
           },
         })
         .then((stream) => {
@@ -262,22 +263,17 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasm = () => {
-    // const isIOS = () => {
-    //   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    // };
-    const camWidth = 1440;
-    const camHeight = 2560;
-    // const camWidth = 2560;
-    // const camHeight = 1080;
-    const isDesktop = window.screen.width > window.screen.height;
+    const camWidth = 720;
+    const camHeight = 1280;
+    const isDesktop = window.screen.width > 1000;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { camWidth },
-            height: { camHeight },
+            width: isDesktop ? { ideal: 2560 } : { min: camWidth },
+            height: isDesktop ? { ideal: 1440 } : { min: camHeight },
           },
         })
         .then((stream) => {
@@ -370,6 +366,7 @@ const VeryfiLens = (function () {
               }
             } else {
               setHasCoordinates(false);
+              image = imgString
             }
           });
         } catch (error) {
@@ -384,21 +381,28 @@ const VeryfiLens = (function () {
 
   const getLongImage = async () => {
     let wasmOutput;
-    wasmOutput = await wasmWrapper.getStitchedImage();
-    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-    // console.log(blurLevel)
-    const width = outputWidth;
-    const height = outputHeight;
-    const cropImgCanvas = cropImgRef;
-    cropImgRef.height = height;
-    cropImgRef.width = width;
-    const ctx = cropImgCanvas.getContext("2d");
-    const imageData = new ImageData(data, width, height);
-    ctx.putImageData(imageData, 0, 0);
+    let imgString
+    if (hasCoordinates) {
+      wasmOutput = await wasmWrapper.getStitchedImage();
+      const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+      // console.log(blurLevel)
+      const width = outputWidth;
+      const height = outputHeight;
+      const cropImgCanvas = cropImgRef;
+      cropImgRef.height = height;
+      cropImgRef.width = width;
+      const ctx = cropImgCanvas.getContext("2d");
+      const imageData = new ImageData(data, width, height);
+      ctx.putImageData(imageData, 0, 0);
+      imgString = cropImgCanvas.toDataURL("image/jpeg");
+      image = cropImgCanvas;
+    } else { 
+      console.log(isDocument)
+      // isDocument = false
+      imgString = image
+    }
     // setBlurStatus(blurLevel); gives 0 all the time
     stopWasm();
-    const imgString = cropImgCanvas.toDataURL("image/jpeg");
-    image = cropImgCanvas;
     releaseCanvas(boxRef);
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
@@ -438,8 +442,8 @@ const VeryfiLens = (function () {
       originalHeight,
       0,
       0,
-      width,
-      height
+      height,
+      width
     );
     if (container) {
       while (container.firstChild) {
@@ -550,6 +554,75 @@ const VeryfiLens = (function () {
     return imgString.split("data:image/jpeg;base64,")[1];
   };
 
+  const cropImage = async () => {
+    const video = videoRef;
+    const cropImgCanvas = cropImgRef;
+    if (fullSizeImage) {
+      console.log("[Event] Full size image is set");
+      if (hasCoordinates) {
+        setIsDocument(true);
+        let { sx, sy, sw, sh } = getCropLimits(coordinates);
+        const scaleWidth = fullSizeImage.width / video.videoWidth;
+        const scaleHeight = fullSizeImage.height / video.videoHeight;
+
+        sx = sx * scaleWidth;
+        sy = sy * scaleHeight;
+        sw = sw * scaleWidth;
+        sh = sh * scaleHeight;
+
+        cropImgCanvas.width = sw;
+        cropImgCanvas.height = sh;
+        const ctx = cropImgCanvas.getContext("2d");
+
+        if (ctx) {
+          ctx.save();
+          ctx.drawImage(fullSizeImage, sx, sy, sw, sh, 0, 0, sw, sh);
+          ctx.restore();
+        }
+      } else {
+        cropImgCanvas.width = video.videoWidth;
+        cropImgCanvas.height = video.videoHeight;
+        const ctx = cropImgCanvas.getContext("2d");
+        if (ctx) {
+          ctx.save();
+          ctx.drawImage(fullSizeImage, 0, 0);
+          ctx.restore();
+        }
+      }
+    } else {
+      if (hasCoordinates) {
+        setIsDocument(true);
+        let { sx, sy, sw, sh } = getCropLimits(coordinates);
+        cropImgCanvas.width = sw;
+        cropImgCanvas.height = sh;
+        const ctx = cropImgCanvas.getContext("2d");
+        if (ctx) {
+          ctx.save();
+          ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+          ctx.restore();
+        }
+      } else {
+        cropImgCanvas.width = video.videoWidth;
+        cropImgCanvas.height = video.videoHeight;
+        const ctx = cropImgCanvas.getContext("2d");
+        if (ctx) {
+          ctx.save();
+          ctx.drawImage(video, 0, 0);
+          ctx.restore();
+        }
+      }
+    }
+
+    waitForElement("#blur-detector").then(() => {
+      isBlurry(cropImgCanvas);
+    });
+
+    image = cropImgCanvas;
+    const imgString = cropImgCanvas.toDataURL("image/jpeg");
+
+    return imgString.split("data:image/jpeg;base64,")[1];
+  };
+
   const socketCropWasm = async () => {
     let wasmOutput;
     if (hasCoordinates) {
@@ -634,8 +707,8 @@ const VeryfiLens = (function () {
     const topRight = [sx + sw, sy];
     const bottomLeft = [sx, sy + sh];
     const bottomRight = [sx + sw, sy + sh];
-    // return { sx, sy, sw, sh }; uncomment to use non wasm crop function (cropImage())
-    return [topLeft, topRight, bottomLeft, bottomRight];
+    return { sx, sy, sw, sh };
+    // return [topLeft, topRight, bottomLeft, bottomRight];
   };
 
   const fetchSessionId = async (clientId) => {
@@ -748,9 +821,7 @@ const VeryfiLens = (function () {
     }
   };
 
-  const sendCC = () => {
-    
-  }
+  const sendCC = () => {};
 
   const setBlurStatus = (variance) => {
     if (variance >= 10) {
@@ -768,12 +839,106 @@ const VeryfiLens = (function () {
     }
   };
 
-  const flattenObject = (obj, parentKey = '', result = {}) => {
+  const isBlurry = async (image) => {
+    console.log("[EVENT] Checking for blur");
+    const src = cv.imread(image);
+    let refVariance;
+    let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
+
+    const grayscale = new cv.Mat();
+    const refGrayscale = new cv.Mat();
+
+    cv.cvtColor(src, grayscale, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(whiteCanvas, refGrayscale, cv.COLOR_RGBA2GRAY);
+
+    const laplacian = new cv.Mat();
+    const refLaplacian = new cv.Mat();
+
+    cv.Laplacian(grayscale, laplacian, cv.CV_8U);
+    cv.Laplacian(refGrayscale, refLaplacian, cv.CV_8U);
+
+    const meanStdDev = new cv.Mat();
+    const laplacianMean = new cv.Mat();
+    const refMeanStdDev = new cv.Mat();
+    const refLaplacianMean = new cv.Mat();
+
+    cv.meanStdDev(laplacian, laplacianMean, meanStdDev);
+    cv.meanStdDev(refLaplacian, refLaplacianMean, refMeanStdDev);
+
+    variance = meanStdDev.data64F[0];
+    refVariance = refMeanStdDev.data64F[0];
+
+    // console.log("variance", variance);
+    // console.log("reference variance", refVariance);
+
+    grayscale.delete();
+    laplacian.delete();
+    meanStdDev.delete();
+    laplacianMean.delete();
+    refGrayscale.delete();
+    refLaplacian.delete();
+    refMeanStdDev.delete();
+    refLaplacianMean.delete();
+    whiteCanvas.delete();
+    setBlurStatus(variance);
+
+    return;
+  };
+
+  const createElementWithStyles = (tag, id, styles, parent) => {
+    const element = document.createElement(tag);
+    element.id = id;
+    Object.assign(element.style, styles);
+    parent.appendChild(element);
+    return element;
+  };
+
+  const createCanvases = () => {
+    const container = document.getElementById("veryfi-container");
+
+    const generalStyles = {
+      position: "absolute",
+      height: "100%",
+      maxWidth: "500px",
+      // aspectRatio: "16/9",
+    };
+
+    cropImgRef = createElementWithStyles(
+      "canvas",
+      "veryfi-crop-img-ref",
+      { ...generalStyles, zIndex: 30 },
+      container
+    );
+    frameRef = createElementWithStyles(
+      "canvas",
+      "veryfi-frame-ref",
+      { display: "none" },
+      container
+    );
+    videoRef = createElementWithStyles(
+      "video",
+      "veryfi-video-ref",
+      generalStyles,
+      container
+    );
+    boxRef = createElementWithStyles(
+      "canvas",
+      "veryfi-box-ref",
+      { ...generalStyles, zIndex: 10 },
+      container
+    );
+  };
+
+  const flattenObject = (obj, parentKey = "", result = {}) => {
     for (let key in obj) {
       if (obj.hasOwnProperty(key)) {
-        let propName = parentKey ? parentKey + '_' + key : key;
-  
-        if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+        let propName = parentKey ? parentKey + "_" + key : key;
+
+        if (
+          typeof obj[key] === "object" &&
+          obj[key] !== null &&
+          !Array.isArray(obj[key])
+        ) {
           flattenObject(obj[key], propName, result);
         } else {
           result[propName] = obj[key];
@@ -781,7 +946,7 @@ const VeryfiLens = (function () {
       }
     }
     return result;
-  }
+  };
 
   const parseUA = () => {
     const userAgentString = navigator.userAgent;
@@ -790,47 +955,41 @@ const VeryfiLens = (function () {
     if (parserResults) {
       return parserResults;
     }
-  }
+  };
 
   const getBrowserData = () => {
     const browserData = gatherBrowserData();
     return browserData;
-  }
+  };
+
+  const waitForElement = (selector) => {
+    return new Promise((resolve) => {
+      if (document.querySelector(selector)) {
+        return resolve(document.querySelector(selector));
+      }
+
+      const observer = new MutationObserver((mutations) => {
+        if (document.querySelector(selector)) {
+          resolve(document.querySelector(selector));
+          observer.disconnect();
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+    });
+  };
 
   return {
-
     init: async (session, client_id) => {
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
       console.log("[EVENT] Device ID", getDeviceID(device_uuid));
       if (session) {
         lensSessionKey = session;
-        const container = document.getElementById("veryfi-container");
-        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-        const frameClasses =
-          "absolute invisible sm:rounded-md h-full max-w-none";
-        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
-
-        createElement(
-          "canvas",
-          "veryfi-crop-img-ref",
-          [cropImgClasses],
-          container
-        );
-        createElement("canvas", "veryfi-frame-ref", frameClasses, container);
-        createElement(
-          "video",
-          "veryfi-video-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-        createElement(
-          "canvas",
-          "veryfi-box-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-
+        createCanvases();
         videoRef = document.getElementById("veryfi-video-ref");
         const video = videoRef;
         video.playsInline = true;
@@ -839,10 +998,8 @@ const VeryfiLens = (function () {
         frameRef = document.getElementById("veryfi-frame-ref");
         boxRef = document.getElementById("veryfi-box-ref");
         cropImgRef = document.getElementById("veryfi-crop-img-ref");
-        startLens();
-        wasmWrapper = new WasmWrapper();
         if (client_id) {
-          await wasmWrapper.initialize(client_id);
+          startLens();
         } else {
           console.log("No client id provided");
           return;
@@ -861,30 +1018,7 @@ const VeryfiLens = (function () {
 
       if (session) {
         lensSessionKey = session;
-        const container = document.getElementById("veryfi-container");
-        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
-
-        createElement(
-          "canvas",
-          "veryfi-crop-img-ref",
-          [cropImgClasses],
-          container
-        );
-        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
-        createElement(
-          "video",
-          "veryfi-video-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-        createElement(
-          "canvas",
-          "veryfi-box-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-
+        createCanvases();
         videoRef = document.getElementById("veryfi-video-ref");
         const video = videoRef;
         video.playsInline = true;
@@ -894,6 +1028,7 @@ const VeryfiLens = (function () {
         boxRef = document.getElementById("veryfi-box-ref");
         cropImgRef = document.getElementById("veryfi-crop-img-ref");
         if (client_id) {
+          console.log("starting");
           startWasm(client_id);
         } else {
           console.log("No client id provided");
@@ -913,30 +1048,7 @@ const VeryfiLens = (function () {
 
       if (session) {
         lensSessionKey = session;
-        const container = document.getElementById("veryfi-container");
-        const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-        const cropImgClasses = "absolute sm:rounded-md h-full max-w-none z-30";
-
-        createElement(
-          "canvas",
-          "veryfi-crop-img-ref",
-          [cropImgClasses],
-          container
-        );
-        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
-        createElement(
-          "video",
-          "veryfi-video-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-        createElement(
-          "canvas",
-          "veryfi-box-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-
+        createCanvases();
         videoRef = document.getElementById("veryfi-video-ref");
         const video = videoRef;
         video.playsInline = true;
@@ -1037,13 +1149,12 @@ const VeryfiLens = (function () {
     stopCameraWasm: () => {
       console.log("[EVENT] stopCamera");
       stopWasm();
-
       clearInterval(intervalRef);
     },
 
     capture: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture");
-      const finalImage = await socketCropWasm();
+      const finalImage = await cropImage();
       setImage && setImage(finalImage);
       console.log("[EVENT] hasCoordinates: ", hasCoordinates);
       if (hasCoordinates) setIsDocument(true);
@@ -1054,7 +1165,7 @@ const VeryfiLens = (function () {
 
     captureWasm: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture wasm");
-      console.log("[EVENT] hasCoordinates: ", hasCoordinates);
+      // console.log("[EVENT] hasCoordinates: ", hasCoordinates);
       if (hasCoordinates) setIsDocument(true);
       finalImage = await cropWasm();
       setImage && setImage(finalImage);
@@ -1068,7 +1179,7 @@ const VeryfiLens = (function () {
       finalImage = await getLongImage();
       setImage && setImage(finalImage);
       stopWasm();
-      setIsDocument(true);
+     if (hasCoordinates) setIsDocument(true);
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
@@ -1218,12 +1329,11 @@ const VeryfiLens = (function () {
       const UAData = flattenObject(parseUA());
 
       return {
-        browser_fingerprint: {...UAData, ...browserData},
+        browser_fingerprint: { ...UAData, ...browserData },
         uuid: device_uuid,
         source: "lens.web",
       };
     },
-
   };
 })();
 
