@@ -26,7 +26,7 @@ inquirer
     if (answers.confirmCopy) {
       const sourcePath = path.join(
         process.cwd(),
-        "node_modules/veryfi-lens-wasm/src/wasm"
+        "node_modules/veryfi-lens-wasm/wasm"
       );
       const targetPath = path.isAbsolute(answers.targetPath)
         ? answers.targetPath
