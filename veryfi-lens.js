@@ -214,16 +214,14 @@ const VeryfiLens = (function () {
 
   const getVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
-    const camWidth = 720;
-    const camHeight = 1280;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 2560 } : { min: camWidth },
-            height: isDesktop ? { ideal: 1440 } : { min: camHeight },
+            width: isDesktop ? { ideal: 1440 } : { min: 720 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1280 },
           },
         })
         .then((stream) => {
@@ -238,8 +236,6 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasmLong = () => {
-    const camWidth = 720;
-    const camHeight = 1280;
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
       navigator.mediaDevices
@@ -247,8 +243,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 2560 } : { min: 1080 },
-            height: isDesktop ? { ideal: 1440 } : { min: 1920 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1080 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1920 },
           },
         })
         .then((stream) => {
@@ -263,17 +259,15 @@ const VeryfiLens = (function () {
   };
 
   const getVideoWasm = () => {
-    const camWidth = 720;
-    const camHeight = 1280;
-    const isDesktop = window.screen.width > 1000;
+    const isDesktop = window.screen.width >  window.screen.height;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 2560 } : { min: camWidth },
-            height: isDesktop ? { ideal: 1440 } : { min: camHeight },
+            width: isDesktop ? { ideal: 2560 } : { min: 720 },
+            height: isDesktop ? { ideal: 1440 } : { min: 1280 },
           },
         })
         .then((stream) => {
@@ -370,7 +364,7 @@ const VeryfiLens = (function () {
             }
           });
         } catch (error) {
-          console.error(error);
+          console.log(error);
         }
 
         releaseCanvas(fullSizeCanvas);
@@ -398,7 +392,6 @@ const VeryfiLens = (function () {
       image = cropImgCanvas;
     } else { 
       console.log(isDocument)
-      // isDocument = false
       imgString = image
     }
     // setBlurStatus(blurLevel); gives 0 all the time
@@ -407,6 +400,7 @@ const VeryfiLens = (function () {
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
+
 
   function updatePreview(data, originalWidth, originalHeight) {
     shouldUpdatePreview = false;
@@ -442,14 +436,14 @@ const VeryfiLens = (function () {
       originalHeight,
       0,
       0,
-      height,
-      width
+      width,
+      height
     );
-    if (container) {
-      while (container.firstChild) {
-        container.removeChild(container.firstChild);
+      if (container) {
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
       }
-    }
     if (container) container.appendChild(canvas);
   }
 
@@ -649,7 +643,7 @@ const VeryfiLens = (function () {
       );
       wasmOutput = {
         data: new Uint8ClampedArray(imageData.data.buffer),
-        blurLevel: -1.0,
+        blurLevel: 0.0,
         outputWidth: fullSizeImage.width,
         outputHeight: fullSizeImage.height,
       };
@@ -824,7 +818,7 @@ const VeryfiLens = (function () {
   const sendCC = () => {};
 
   const setBlurStatus = (variance) => {
-    if (variance >= 10) {
+    if (variance >= 9) {
       blurStatus = false;
       return { blurStatus, variance };
     } else if (variance < 0) {
@@ -1014,7 +1008,6 @@ const VeryfiLens = (function () {
       isDocumentProcess = true;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
 
       if (session) {
         lensSessionKey = session;
@@ -1028,7 +1021,6 @@ const VeryfiLens = (function () {
         boxRef = document.getElementById("veryfi-box-ref");
         cropImgRef = document.getElementById("veryfi-crop-img-ref");
         if (client_id) {
-          console.log("starting");
           startWasm(client_id);
         } else {
           console.log("No client id provided");
@@ -1044,7 +1036,6 @@ const VeryfiLens = (function () {
       isStitchingProcess = false;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
 
       if (session) {
         lensSessionKey = session;
@@ -1073,7 +1064,6 @@ const VeryfiLens = (function () {
       if (session) {
         userAgent = navigator.userAgent;
         device_uuid = new DeviceUUID(userAgent).get();
-        console.log("[EVENT] Device ID", getDeviceID(device_uuid));
         if (client_id) {
           await startUploadWasm(client_id);
         } else {
@@ -1090,7 +1080,6 @@ const VeryfiLens = (function () {
       isDocumentProcess = true;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
-      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
 
       if (session) {
         lensSessionKey = session;
