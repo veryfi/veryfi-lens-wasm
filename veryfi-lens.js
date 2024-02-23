@@ -220,8 +220,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 1440 } : { min: 720 },
-            height: isDesktop ? { ideal: 2560 } : { min: 1280 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
+            height: isDesktop ? { ideal: 2560 } : { min: 720 },
           },
         })
         .then((stream) => {
@@ -243,8 +243,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 1440 } : { min: 1080 },
-            height: isDesktop ? { ideal: 2560 } : { min: 1920 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
+            height: isDesktop ? { ideal: 2560 } : { min: 720 },
           },
         })
         .then((stream) => {
@@ -266,8 +266,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 2560 } : { min: 720 },
-            height: isDesktop ? { ideal: 1440 } : { min: 1280 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
+            height: isDesktop ? { ideal: 2560 } : { min: 720 },
           },
         })
         .then((stream) => {
