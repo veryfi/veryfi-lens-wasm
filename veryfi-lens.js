@@ -220,8 +220,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
-            height: isDesktop ? { ideal: 2560 } : { min: 720 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1920 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1080 },
           },
         })
         .then((stream) => {
@@ -243,8 +243,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
-            height: isDesktop ? { ideal: 2560 } : { min: 720 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1920 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1080 },
           },
         })
         .then((stream) => {
@@ -266,8 +266,8 @@ const VeryfiLens = (function () {
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: isDesktop ? { ideal: 1440 } : { min: 1280 },
-            height: isDesktop ? { ideal: 2560 } : { min: 720 },
+            width: isDesktop ? { ideal: 1440 } : { min: 1920 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1080 },
           },
         })
         .then((stream) => {
@@ -283,23 +283,22 @@ const VeryfiLens = (function () {
 
   const getCCVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
-    const camWidth = 1440;
-    const camHeight = 2560;
     if (navigator) {
       navigator.mediaDevices
         .getUserMedia({
           video: {
             aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
             facingMode: "environment",
-            width: { camWidth },
-            height: { camHeight },
+            width: isDesktop ? { ideal: 1440 } : { min: 1920 },
+            height: isDesktop ? { ideal: 2560 } : { min: 1080 },
           },
         })
         .then((stream) => {
           console.log("started stream");
           const video = videoRef;
           video.srcObject = stream;
-          wasmWrapper.setCardCallback(logCC);
+          // wasmWrapper.setCardCallback(logCard);
+          wasmWrapper.initCardDetector();
         })
         .catch((err) => {
           console.log(`[Event] Error: ${err}`);
@@ -477,6 +476,9 @@ const VeryfiLens = (function () {
     ];
     previewData = wasmWrapper.getResultFromBuffer(previewAddress);
     shouldUpdatePreview = status == 0;
+  }
+
+  function logCard(status, x0, y0, x1, y1, x2, y2, x3, y3) {
   }
 
   const drawContours = (contours) => {
@@ -804,7 +806,7 @@ const VeryfiLens = (function () {
     wasmWrapper = new WasmWrapper();
     await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
-      getVideoWasm();
+      getCCVideo();
       requestAnimationFrame(displayVideo);
       intervalRef = setInterval(() => {
         sendWasm("Document");
@@ -1076,7 +1078,7 @@ const VeryfiLens = (function () {
       }
     },
 
-    initWasmCC: async (session, client_id) => {
+    initCC: async (session, client_id) => {
       isDocumentProcess = true;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
