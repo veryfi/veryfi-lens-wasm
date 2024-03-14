@@ -40,9 +40,9 @@ export class WasmWrapper {
 
   /** @private */
   selectDir(useSimd) {
-    // const userAgent = navigator.userAgent;
+    const userAgent = navigator.userAgent;
     if (!useSimd) return "nonsimd";
-    // if (userAgent.indexOf("AppleWebKit") > -1) return "tfsimd";
+    if (userAgent.indexOf("AppleWebKit") > -1) return "tfsimd";
     return "simd";
   }
 

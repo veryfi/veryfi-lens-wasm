@@ -212,159 +212,152 @@ const VeryfiLens = (function () {
     }
   };
 
+
+
   const getVideo = async () => {
     const isDesktop = window.screen.width > window.screen.height;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+  
     if (navigator) {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         console.log(devices);
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
   
-        let mainCameraDeviceId;
-        for (const device of videoDevices) {
-          if (device.label.includes('camera2 0')) { // Choose main camera based on label
-            console.log('Main camera found', device.deviceId);
-            mainCameraDeviceId = device.deviceId;
-            break;
-          }
-        }
-        if (mainCameraDeviceId) {
-          await navigator.mediaDevices.getUserMedia({ 
-              video: {
-                  deviceId: { exact: mainCameraDeviceId },
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  width: { ideal: 3840 },
-                  height: { ideal: 2160 }
-              }
-          }).then((stream) => {
-            console.log("started stream with main camera");
-            const video = videoRef;
-            video.srcObject = stream;
-          }).catch((err) => {
-            console.log(`[Event] Error: ${err}`);
-          });
-        } else {
-          console.log('No camera with label camera2 0 found, using default camera');
-          await navigator.mediaDevices.getUserMedia({
-              video: {
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  facingMode: "environment", // Fallback to default camera if main camera is not found
-                  width: { ideal: 3840 },
-                  height: { ideal: 2160 }
-              }
-          }).then((stream) => {
-            console.log("started stream with default camera");
-            const video = videoRef;
-            video.srcObject = stream;
-          }).catch((err) => {
-            console.log(`[Event] Error: ${err}`);
-          });
-        }
-      } catch (error) {
-        console.error('Error accessing the camera', error);
-      }
-    } else console.log("No navigator available");
-  };
-
-  const getVideoWasm = async () => {
-    const isDesktop = window.screen.width > window.screen.height;
-    if (navigator) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        console.log(devices);
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        let videoConfig = {
+          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+          width: { ideal: 3840 },
+          height: { ideal: 2160 }
+        };
   
-        let mainCameraDeviceId;
-        for (const device of videoDevices) {
-          if (device.label.includes('camera2 0')) { // Choose main camera based on label
-            console.log('Main camera found', device.deviceId);
-            mainCameraDeviceId = device.deviceId;
-            break;
+        if (isAndroid) {
+          // Attempt to choose the main camera only on Android devices
+          const mainCameraDevice = videoDevices.find(device => device.label.includes('camera2 0'));
+          if (mainCameraDevice) {
+            console.log('Main camera found', mainCameraDevice.deviceId);
+            videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
+          } else {
+            console.log('No camera with label "camera2 0" found, using default camera settings');
+            videoConfig.facingMode = "environment"; // Fallback to default camera
           }
-        }
-        if (mainCameraDeviceId) {
-          await navigator.mediaDevices.getUserMedia({ 
-              video: {
-                  deviceId: { exact: mainCameraDeviceId },
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  width: { ideal: 3840 },
-                  height: { ideal: 2160 }
-              }
-            }).then((stream) => {
-                const video = videoRef;
-                video.srcObject = stream;
-                wasmWrapper.setDocumentCallback(logDocument);
-              })
-              .catch((err) => {
-                console.log(`[Event] Error: ${err}`);
-              });
         } else {
-          console.log('No camera with label camera2 0 found, using default camera');
-          await navigator.mediaDevices.getUserMedia({
-              video: {
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  facingMode: "environment", // Fallback to default camera if main camera is not found
-                  width: { ideal: 3840 },
-                  height: { ideal: 2160 }
-              }
-          }).then((stream) => {
+          // Non-Android devices use default camera settings
+          console.log('Non-Android device, using default camera settings');
+          videoConfig.facingMode = "environment";
+        }
+  
+        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
+          .then((stream) => {
+            console.log(videoConfig.deviceId ? "Started stream with main camera" : "Started stream with default camera");
             const video = videoRef;
             video.srcObject = stream;
-            wasmWrapper.setDocumentCallback(logDocument);
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
-        }
       } catch (error) {
         console.error('Error accessing the camera', error);
       }
-    } else console.log("No navigator available");
+    } else {
+      console.log("No navigator available");
+    }
   };
   
+  
+  
+  
 
-  const getVideoWasmLong = async () => {
+  const getVideoWasm = async () => {
     const isDesktop = window.screen.width > window.screen.height;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
     if (navigator) {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         console.log(devices);
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
   
-        let mainCameraDeviceId;
-        for (const device of videoDevices) {
-          if (device.label.includes('camera2 0')) { // Choose main camera based on label
-            console.log('Main camera found', device.deviceId);
-            mainCameraDeviceId = device.deviceId;
-            break;
+        let useMainCamera = false;
+        let mainCameraDeviceId = null;
+        if (isAndroid) { // Attempt to choose main camera only on Android
+          for (const device of videoDevices) {
+            if (device.label.includes('camera2 0')) {
+              console.log('Main camera found', device.deviceId);
+              mainCameraDeviceId = device.deviceId;
+              useMainCamera = true;
+              break;
+            }
           }
         }
-        if (mainCameraDeviceId) {
-          await navigator.mediaDevices.getUserMedia({ 
-              video: {
-                  deviceId: { exact: mainCameraDeviceId },
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  width:  { ideal: 2560 },
-                  height:  { ideal: 1440 }
-              }
-            }).then((stream) => {
-                const video = videoRef;
-                video.srcObject = stream;
-                wasmWrapper.setStitcherCallback(logLongDocument);
-              })
-              .catch((err) => {
-                console.log(`[Event] Error: ${err}`);
-              });
+        // Common video configuration
+        let videoConfig = {
+          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+          width: { ideal: 3840 },
+          height: { ideal: 2160 }
+        };
+  
+        if (useMainCamera) {
+          videoConfig.deviceId = { exact: mainCameraDeviceId };
         } else {
-          console.log('No camera with label camera2 0 found, using default camera');
-          await navigator.mediaDevices.getUserMedia({
-              video: {
-                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-                  facingMode: "environment", // Fallback to default camera if main camera is not found
-                  width:  { ideal: 2560 },
-                  height:  { ideal: 1440 }
-              }
-          }).then((stream) => {
+          // Adjusts for default camera usage
+          videoConfig.facingMode = "environment";
+        }
+  
+        // Use the common video configuration to request user media
+        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
+          .then((stream) => {
+              const video = videoRef;
+              video.srcObject = stream;
+              wasmWrapper.setDocumentCallback(logDocument);
+            })
+          .catch((err) => {
+              console.log(`[Event] Error: ${err}`);
+            });
+      } catch (error) {
+        console.error('Error accessing the camera', error);
+      }
+    } else {
+      console.log("No navigator available");
+    }
+  };
+  
+  
+
+  const getVideoWasmLong = async () => {
+    const isDesktop = window.screen.width > window.screen.height;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+  
+    if (navigator) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log(devices);
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+  
+        let videoConfig = {
+          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+          width: { ideal: 2560 },
+          height: { ideal: 1440 }
+        };
+  
+        if (isAndroid) {
+          // Attempt to choose the main camera only on Android devices
+          const mainCameraDevice = videoDevices.find(device => device.label.includes('camera2 0'));
+          if (mainCameraDevice) {
+            console.log('Main camera found', mainCameraDevice.deviceId);
+            videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
+          } else {
+            console.log('No camera with label "camera2 0" found, using default camera settings');
+            videoConfig.facingMode = "environment"; // Fallback to default camera
+          }
+        } else {
+          // Non-Android devices use default camera settings
+          console.log('Non-Android device, using default camera settings');
+          videoConfig.facingMode = "environment";
+        }
+  
+        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
+          .then((stream) => {
+            console.log(videoConfig.deviceId ? "Started stream with main camera" : "Started stream with default camera");
             const video = videoRef;
             video.srcObject = stream;
             wasmWrapper.setStitcherCallback(logLongDocument);
@@ -372,12 +365,14 @@ const VeryfiLens = (function () {
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
-        }
       } catch (error) {
         console.error('Error accessing the camera', error);
       }
-    } else console.log("No navigator available");
+    } else {
+      console.log("No navigator available");
+    }
   };
+  
 
 
 
