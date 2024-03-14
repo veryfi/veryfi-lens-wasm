@@ -212,74 +212,174 @@ const VeryfiLens = (function () {
     }
   };
 
-  const getVideo = () => {
+  const getVideo = async () => {
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: {
-            aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-            facingMode: "environment",
-            width:  { ideal: 3840 },
-            height:  { ideal: 2160 }
-          },
-        })
-        .then((stream) => {
-          console.log("started stream");
-          const video = videoRef;
-          video.srcObject = stream;
-        })
-        .catch((err) => {
-          console.log(`[Event] Error: ${err}`);
-        });
-    }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log(devices);
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+  
+        let mainCameraDeviceId;
+        for (const device of videoDevices) {
+          if (device.label.includes('camera2 0')) { // Choose main camera based on label
+            console.log('Main camera found', device.deviceId);
+            mainCameraDeviceId = device.deviceId;
+            break;
+          }
+        }
+        if (mainCameraDeviceId) {
+          await navigator.mediaDevices.getUserMedia({ 
+              video: {
+                  deviceId: { exact: mainCameraDeviceId },
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  width: { ideal: 3840 },
+                  height: { ideal: 2160 }
+              }
+          }).then((stream) => {
+            console.log("started stream with main camera");
+            const video = videoRef;
+            video.srcObject = stream;
+          }).catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+        } else {
+          console.log('No camera with label camera2 0 found, using default camera');
+          await navigator.mediaDevices.getUserMedia({
+              video: {
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  facingMode: "environment", // Fallback to default camera if main camera is not found
+                  width: { ideal: 3840 },
+                  height: { ideal: 2160 }
+              }
+          }).then((stream) => {
+            console.log("started stream with default camera");
+            const video = videoRef;
+            video.srcObject = stream;
+          }).catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+        }
+      } catch (error) {
+        console.error('Error accessing the camera', error);
+      }
+    } else console.log("No navigator available");
   };
 
-  const getVideoWasmLong = () => {
+  const getVideoWasm = async () => {
     const isDesktop = window.screen.width > window.screen.height;
     if (navigator) {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: {
-            aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-            facingMode: "environment",
-            width:  { ideal: 2560 },
-            height:  { ideal: 1440 }
-          },
-        })
-        .then((stream) => {
-          const video = videoRef;
-          video.srcObject = stream;
-          wasmWrapper.setStitcherCallback(logLongDocument);
-        })
-        .catch((err) => {
-          console.log(`[Event] Error: ${err}`);
-        });
-    } else console.log("No user agent");
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log(devices);
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+  
+        let mainCameraDeviceId;
+        for (const device of videoDevices) {
+          if (device.label.includes('camera2 0')) { // Choose main camera based on label
+            console.log('Main camera found', device.deviceId);
+            mainCameraDeviceId = device.deviceId;
+            break;
+          }
+        }
+        if (mainCameraDeviceId) {
+          await navigator.mediaDevices.getUserMedia({ 
+              video: {
+                  deviceId: { exact: mainCameraDeviceId },
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  width: { ideal: 3840 },
+                  height: { ideal: 2160 }
+              }
+            }).then((stream) => {
+                const video = videoRef;
+                video.srcObject = stream;
+                wasmWrapper.setDocumentCallback(logDocument);
+              })
+              .catch((err) => {
+                console.log(`[Event] Error: ${err}`);
+              });
+        } else {
+          console.log('No camera with label camera2 0 found, using default camera');
+          await navigator.mediaDevices.getUserMedia({
+              video: {
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  facingMode: "environment", // Fallback to default camera if main camera is not found
+                  width: { ideal: 3840 },
+                  height: { ideal: 2160 }
+              }
+          }).then((stream) => {
+            const video = videoRef;
+            video.srcObject = stream;
+            wasmWrapper.setDocumentCallback(logDocument);
+          })
+          .catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+        }
+      } catch (error) {
+        console.error('Error accessing the camera', error);
+      }
+    } else console.log("No navigator available");
+  };
+  
+
+  const getVideoWasmLong = async () => {
+    const isDesktop = window.screen.width > window.screen.height;
+    if (navigator) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log(devices);
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+  
+        let mainCameraDeviceId;
+        for (const device of videoDevices) {
+          if (device.label.includes('camera2 0')) { // Choose main camera based on label
+            console.log('Main camera found', device.deviceId);
+            mainCameraDeviceId = device.deviceId;
+            break;
+          }
+        }
+        if (mainCameraDeviceId) {
+          await navigator.mediaDevices.getUserMedia({ 
+              video: {
+                  deviceId: { exact: mainCameraDeviceId },
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  width:  { ideal: 2560 },
+                  height:  { ideal: 1440 }
+              }
+            }).then((stream) => {
+                const video = videoRef;
+                video.srcObject = stream;
+                wasmWrapper.setStitcherCallback(logLongDocument);
+              })
+              .catch((err) => {
+                console.log(`[Event] Error: ${err}`);
+              });
+        } else {
+          console.log('No camera with label camera2 0 found, using default camera');
+          await navigator.mediaDevices.getUserMedia({
+              video: {
+                  aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+                  facingMode: "environment", // Fallback to default camera if main camera is not found
+                  width:  { ideal: 2560 },
+                  height:  { ideal: 1440 }
+              }
+          }).then((stream) => {
+            const video = videoRef;
+            video.srcObject = stream;
+            wasmWrapper.setStitcherCallback(logLongDocument);
+          })
+          .catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+        }
+      } catch (error) {
+        console.error('Error accessing the camera', error);
+      }
+    } else console.log("No navigator available");
   };
 
-  const getVideoWasm = () => {
-    const isDesktop = window.screen.width >  window.screen.height;
-    if (navigator) {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: {
-            aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-            facingMode: "environment",
-            width:  { ideal: 3840 },
-            height:  { ideal: 2160 }
-          },
-        })
-        .then((stream) => {
-          const video = videoRef;
-          video.srcObject = stream;
-          wasmWrapper.setDocumentCallback(logDocument);
-        })
-        .catch((err) => {
-          console.log(`[Event] Error: ${err}`);
-        });
-    } else console.log("No user agent");
-  };
+
 
   const getCCVideo = () => {
     const isDesktop = window.screen.width > window.screen.height;
@@ -314,6 +414,8 @@ const VeryfiLens = (function () {
       img.src = src;
     });
   };
+
+
 
   const sendWasm = async (mode) => {
     if (isDocumentProcess) {
@@ -549,6 +651,8 @@ const VeryfiLens = (function () {
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
+  
+
 
   const cropImage = async () => {
     const video = videoRef;
