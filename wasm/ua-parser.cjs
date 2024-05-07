@@ -945,5 +945,3 @@
     }
    
 })(typeof window === 'object' ? window : this);
-
-export default UAParser;

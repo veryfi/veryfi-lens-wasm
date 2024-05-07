@@ -1,11 +1,7 @@
 import DeviceUUID from "./wasm/device-uuid.js";
 import { WasmWrapper } from "./wasm/wasm.js";
 import gatherBrowserData from "./wasm/device-data.js";
-import UAParser from "./wasm/ua-parser.js";
-
-
-const script = document.createElement("script");
-script.src = "./wasm/opencv.js";
+import UAParser from "./wasm/ua-parser.cjs";
 
 const VeryfiLens = (function () {
   const DEFAULT_BOX_COlOR = "rgba(84, 192, 139, 0.6)";
@@ -17,6 +13,8 @@ const VeryfiLens = (function () {
   const SOCKET_URL = "wss://lens.veryfi.com/ws/crop";
   const VALIDATE_URL = "https://lens.veryfi.com/rest/validate_partner";
   const PROCESS_URL = "https://lens.veryfi.com/rest/process";
+  const wasmWrapper = new WasmWrapper();
+  let creditCardStatus = "AutoCaptureResultWaiting";
   const SOCKET_STATUSES = [
     {
       value: 0,
@@ -48,7 +46,7 @@ const VeryfiLens = (function () {
   let userAgent = null;
   let device_uuid = null;
   let fullSizeImage;
-  let wasmWrapper = null;
+  // let wasmWrapper = null;
   let finalImage;
 
   let previewData = null;
@@ -70,7 +68,19 @@ const VeryfiLens = (function () {
   let blurStatus = "";
   let variance;
   let shouldUpdatePreview = false;
+  let CCPhase = "ScanningFront";
+  let timeStamp = 0;
+  let ShouldProcessCC = true;
+  // let cv = null;
+  let cvReady = false;
 
+  let cardData = {
+    status: "",
+    name: "",
+    number: "",
+    date: "",
+    cvv: "",
+  };
   const releaseCanvas = (canvas) => {
     if (canvas) {
       canvas.width = 1;
@@ -212,43 +222,51 @@ const VeryfiLens = (function () {
     }
   };
 
-
-
   const getVideo = async () => {
     const isDesktop = window.screen.width > window.screen.height;
     const isAndroid = /Android/i.test(navigator.userAgent);
-  
+
     if (navigator) {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
-        console.log(devices);
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-  
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
         let videoConfig = {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
-          height: { ideal: 2160 }
+          height: { ideal: 2160 },
         };
-  
+
         if (isAndroid) {
           // Attempt to choose the main camera only on Android devices
-          const mainCameraDevice = videoDevices.find(device => device.label.includes('camera2 0'));
+          const mainCameraDevice = videoDevices.find((device) =>
+            device.label.includes("camera2 0")
+          );
           if (mainCameraDevice) {
-            console.log('Main camera found', mainCameraDevice.deviceId);
+            console.log("Main camera found", mainCameraDevice.deviceId);
             videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
           } else {
-            console.log('No camera with label "camera2 0" found, using default camera settings');
+            console.log(
+              'No camera with label "camera2 0" found, using default camera settings'
+            );
             videoConfig.facingMode = "environment"; // Fallback to default camera
           }
         } else {
           // Non-Android devices use default camera settings
-          console.log('Non-Android device, using default camera settings');
+          console.log("Non-Android device, using default camera settings");
           videoConfig.facingMode = "environment";
         }
-  
-        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
+
+        await navigator.mediaDevices
+          .getUserMedia({ video: videoConfig })
           .then((stream) => {
-            console.log(videoConfig.deviceId ? "Started stream with main camera" : "Started stream with default camera");
+            console.log(
+              videoConfig.deviceId
+                ? "Started stream with main camera"
+                : "Started stream with default camera"
+            );
             const video = videoRef;
             video.srcObject = stream;
           })
@@ -256,16 +274,72 @@ const VeryfiLens = (function () {
             console.log(`[Event] Error: ${err}`);
           });
       } catch (error) {
-        console.error('Error accessing the camera', error);
+        console.error("Error accessing the camera", error);
       }
     } else {
       console.log("No navigator available");
     }
   };
-  
-  
-  
-  
+
+  const getVideoWasmLong = async () => {
+    const isDesktop = window.screen.width > window.screen.height;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    if (navigator) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
+        let videoConfig = {
+          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+          width: { ideal: 2560 },
+          height: { ideal: 1440 },
+        };
+
+        if (isAndroid) {
+          // Attempt to choose the main camera only on Android devices
+          const mainCameraDevice = videoDevices.find((device) =>
+            device.label.includes("camera2 0")
+          );
+          if (mainCameraDevice) {
+            console.log("Main camera found", mainCameraDevice.deviceId);
+            videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
+          } else {
+            console.log(
+              'No camera with label "camera2 0" found, using default camera settings'
+            );
+            videoConfig.facingMode = "environment"; // Fallback to default camera
+          }
+        } else {
+          // Non-Android devices use default camera settings
+          console.log("Non-Android device, using default camera settings");
+          videoConfig.facingMode = "environment";
+        }
+
+        await navigator.mediaDevices
+          .getUserMedia({ video: videoConfig })
+          .then((stream) => {
+            console.log(
+              videoConfig.deviceId
+                ? "Started stream with main camera"
+                : "Started stream with default camera"
+            );
+            const video = videoRef;
+            video.srcObject = stream;
+            wasmWrapper.setStitcherCallback(logLongDocument);
+          })
+          .catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+      } catch (error) {
+        console.error("Error accessing the camera", error);
+      }
+    } else {
+      console.log("No navigator available");
+    }
+  };
 
   const getVideoWasm = async () => {
     const isDesktop = window.screen.width > window.screen.height;
@@ -275,129 +349,102 @@ const VeryfiLens = (function () {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         console.log(devices);
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-  
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
         let useMainCamera = false;
         let mainCameraDeviceId = null;
-        if (isAndroid) { // Attempt to choose main camera only on Android
+        if (isAndroid) {
           for (const device of videoDevices) {
-            if (device.label.includes('camera2 0')) {
-              console.log('Main camera found', device.deviceId);
+            if (device.label.includes("camera2 0")) {
+              console.log("Main camera found", device.deviceId);
               mainCameraDeviceId = device.deviceId;
               useMainCamera = true;
               break;
             }
           }
         }
-        // Common video configuration
         let videoConfig = {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
-          height: { ideal: 2160 }
+          height: { ideal: 2160 },
         };
-  
+
         if (useMainCamera) {
           videoConfig.deviceId = { exact: mainCameraDeviceId };
         } else {
-          // Adjusts for default camera usage
           videoConfig.facingMode = "environment";
         }
-  
-        // Use the common video configuration to request user media
-        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
-          .then((stream) => {
-              const video = videoRef;
-              video.srcObject = stream;
-              wasmWrapper.setDocumentCallback(logDocument);
-            })
-          .catch((err) => {
-              console.log(`[Event] Error: ${err}`);
-            });
-      } catch (error) {
-        console.error('Error accessing the camera', error);
-      }
-    } else {
-      console.log("No navigator available");
-    }
-  };
-  
-  
 
-  const getVideoWasmLong = async () => {
-    const isDesktop = window.screen.width > window.screen.height;
-    const isAndroid = /Android/i.test(navigator.userAgent);
-  
-    if (navigator) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        console.log(devices);
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-  
-        let videoConfig = {
-          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-          width: { ideal: 2560 },
-          height: { ideal: 1440 }
-        };
-  
-        if (isAndroid) {
-          // Attempt to choose the main camera only on Android devices
-          const mainCameraDevice = videoDevices.find(device => device.label.includes('camera2 0'));
-          if (mainCameraDevice) {
-            console.log('Main camera found', mainCameraDevice.deviceId);
-            videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
-          } else {
-            console.log('No camera with label "camera2 0" found, using default camera settings');
-            videoConfig.facingMode = "environment"; // Fallback to default camera
-          }
-        } else {
-          // Non-Android devices use default camera settings
-          console.log('Non-Android device, using default camera settings');
-          videoConfig.facingMode = "environment";
-        }
-  
-        await navigator.mediaDevices.getUserMedia({ video: videoConfig })
+        await navigator.mediaDevices
+          .getUserMedia({ video: videoConfig })
           .then((stream) => {
-            console.log(videoConfig.deviceId ? "Started stream with main camera" : "Started stream with default camera");
             const video = videoRef;
             video.srcObject = stream;
-            wasmWrapper.setStitcherCallback(logLongDocument);
+            wasmWrapper.setDocumentCallback(logDocument);
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
       } catch (error) {
-        console.error('Error accessing the camera', error);
+        console.error("Error accessing the camera", error);
       }
     } else {
       console.log("No navigator available");
     }
   };
-  
 
-
-
-  const getCCVideo = () => {
+  const getCCVideo = async () => {
     const isDesktop = window.screen.width > window.screen.height;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
     if (navigator) {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: {
-            aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-            facingMode: "environment",
-            width:  { ideal: 3840 },
-            height:  { ideal: 2160 }
-          },
-        })
-        .then((stream) => {
-          console.log("started stream");
-          const video = videoRef;
-          video.srcObject = stream;
-          // wasmWrapper.setCardCallback(logCard);
-          wasmWrapper.initCardDetector();
-        })
-        .catch((err) => {
-          console.log(`[Event] Error: ${err}`);
-        });
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
+        let useMainCamera = false;
+        let mainCameraDeviceId = null;
+        if (isAndroid) {
+          // Attempt to choose main camera only on Android
+          for (const device of videoDevices) {
+            if (device.label.includes("camera2 0")) {
+              console.log("Main camera found", device.deviceId);
+              mainCameraDeviceId = device.deviceId;
+              useMainCamera = true;
+              break;
+            }
+          }
+        }
+        let videoConfig = {
+          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+        };
+
+        if (useMainCamera) {
+          videoConfig.deviceId = { exact: mainCameraDeviceId };
+        } else {
+          videoConfig.facingMode = "environment";
+        }
+        await navigator.mediaDevices
+          .getUserMedia({ video: videoConfig })
+          .then((stream) => {
+            const video = videoRef;
+            video.srcObject = stream;
+            wasmWrapper.setCardDetectorCallback(logCard);
+          })
+          .catch((err) => {
+            console.log(`[Event] Error: ${err}`);
+          });
+      } catch (error) {
+        console.error("Error accessing the camera", error);
+      }
+    } else {
+      console.log("No navigator available");
     }
   };
 
@@ -409,8 +456,6 @@ const VeryfiLens = (function () {
       img.src = src;
     });
   };
-
-
 
   const sendWasm = async (mode) => {
     if (isDocumentProcess) {
@@ -456,7 +501,7 @@ const VeryfiLens = (function () {
               }
             } else {
               setHasCoordinates(false);
-              image = imgString
+              image = imgString;
             }
           });
         } catch (error) {
@@ -469,9 +514,54 @@ const VeryfiLens = (function () {
     }
   };
 
+  const sendCardWasm = async () => {
+    if (!ShouldProcessCC) return;
+    if (CCPhase == "FlipCard") {
+      console.log("PHASE 3");
+      if (timeStamp === 0) {
+        console.log("Set Time");
+        timeStamp = Date.now();
+      }
+
+      if (Date.now() - timeStamp > 3000) {
+        console.log("Changing to phase 2");
+        CCPhase = "ScanningBack";
+        timeStamp = 0;
+      }
+      return;
+    }
+    if (cardData.status == "AutoCaptureResultDone") return;
+    if (!videoRef) return;
+    if (cardData.status != "AutoCaptureResultDone") {
+      const video = videoRef;
+      let videoHeight = video.videoHeight;
+      let videoWidth = video.videoWidth;
+      const fullSizeCanvas = document.createElement("canvas");
+      fullSizeCanvas.width = videoWidth;
+      fullSizeCanvas.height = videoHeight;
+      const fullSizeCtx = fullSizeCanvas.getContext("2d");
+
+      if (fullSizeCtx) {
+        fullSizeCtx.drawImage(video, 0, 0, videoWidth, videoHeight);
+        const imgString = fullSizeCanvas.toDataURL("image/jpeg");
+        try {
+          const fullSizeImage = await loadImage(imgString);
+
+          createImageBitmap(fullSizeImage).then((bitmap) => {
+            // console.log(bitmap)
+            wasmWrapper.processFrame(bitmap);
+          });
+        } catch (error) {
+          console.error("Error loading image for card processing:", error);
+        }
+        fullSizeCanvas.remove();
+      }
+    }
+  };
+
   const getLongImage = async () => {
     let wasmOutput;
-    let imgString
+    let imgString;
     if (hasCoordinates) {
       wasmOutput = await wasmWrapper.getStitchedImage();
       const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
@@ -486,9 +576,9 @@ const VeryfiLens = (function () {
       ctx.putImageData(imageData, 0, 0);
       imgString = cropImgCanvas.toDataURL("image/jpeg");
       image = cropImgCanvas;
-    } else { 
-      console.log(isDocument)
-      imgString = image
+    } else {
+      console.log(isDocument);
+      imgString = image;
     }
     // setBlurStatus(blurLevel); gives 0 all the time
     stopWasm();
@@ -496,7 +586,6 @@ const VeryfiLens = (function () {
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
-
 
   function updatePreview(data, originalWidth, originalHeight) {
     shouldUpdatePreview = false;
@@ -535,48 +624,84 @@ const VeryfiLens = (function () {
       width,
       height
     );
-      if (container) {
-        while (container.firstChild) {
-          container.removeChild(container.firstChild);
-        }
+    if (container) {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
       }
+    }
     if (container) container.appendChild(canvas);
   }
 
-  function logDocument(status, x0, y0, x1, y1, x2, y2, x3, y3) {
-    coordinates = [
-      [x0, y0],
-      [x1, y1],
-      [x2, y2],
-      [x3, y3],
-    ];
-    // console.log('coordinates',coordinates)
+  function logDocument(detectorResult, corners, nDocs) {
+    console.log(
+      `Detector Result: ${detectorResult}, Documents Detected: ${nDocs}`
+    );
+    for (let i = 0; i < nDocs; i++) {
+      const offset = i * 4;
+      coordinates = [
+        [corners[offset].x, corners[offset].y],
+        [corners[offset + 1].x, corners[offset + 1].y],
+        [corners[offset + 2].x, corners[offset + 2].y],
+        [corners[offset + 3].x, corners[offset + 3].y],
+      ];
+    }
   }
 
-  function logLongDocument(
-    status,
-    x0,
-    y0,
-    x1,
-    y1,
-    x2,
-    y2,
-    x3,
-    y3,
-    previewAddress
-  ) {
-    coordinates = [
-      [x0, y0],
-      [x1, y1],
-      [x2, y2],
-      [x3, y3],
-    ];
-    previewData = wasmWrapper.getResultFromBuffer(previewAddress);
-    shouldUpdatePreview = status == 0;
+  function logLongDocument(stitcherResult, corners, nDocs, preview) {
+    coordinates = corners.map((corner) => [corner.x, corner.y]);
+    previewData = preview;
+    shouldUpdatePreview = stitcherResult === 0;
   }
 
-  function logCard(status, x0, y0, x1, y1, x2, y2, x3, y3) {
-  }
+  const logCard = (status, name, number, date, cvv) => {
+    const newData = wasmWrapper.parseCreditCardCallback(
+      status,
+      name,
+      number,
+      date,
+      cvv
+    );
+
+    creditCardStatus = status;
+    console.log(newData);
+    Object.keys(newData).forEach((key) => {
+      // Check also for empty string along with undefined and null
+      if (
+        newData[key] !== undefined &&
+        newData[key] !== null &&
+        newData[key] !== ""
+      ) {
+        cardData[key] = newData[key];
+      }
+    });
+    console.log("card status", cardData.status);
+    if (cardData.status == "AutoCaptureResultDone") {
+      console.log("SWITCHING", CCPhase);
+      switch (CCPhase) {
+        case "ScanningFront":
+          console.log("ITS CASE 1");
+          cardData.status = "";
+          CCPhase = "FlipCard";
+        case "ScanningBack":
+          console.log("ITS CASE 2");
+          const scanForNumber = !cardData.number;
+          const scanForName = !cardData.name;
+          const scanForDate = !cardData.date;
+          const scanForCvv = !cardData.cvv;
+          wasmWrapper.resetAutoCapture(
+            scanForNumber,
+            scanForName,
+            scanForDate,
+            scanForCvv
+          );
+          if (cardData.status == "AutoCaptureResultDone") {
+            ShouldProcessCC = false;
+            wasmWrapper.resetAutoCapture(true, true, true, true);
+            wasmWrapper.releaseCallback();
+          }
+      }
+    }
+  };
 
   const drawContours = (contours) => {
     const video = videoRef;
@@ -629,6 +754,7 @@ const VeryfiLens = (function () {
       };
     }
     const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+    // console.log("out", wasmOutput);
     const width = outputWidth;
     const height = outputHeight;
     const cropImgCanvas = cropImgRef;
@@ -646,8 +772,6 @@ const VeryfiLens = (function () {
     coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
-  
-
 
   const cropImage = async () => {
     const video = videoRef;
@@ -850,8 +974,9 @@ const VeryfiLens = (function () {
   };
 
   const startWasm = async (client_id) => {
-    wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize(client_id);
+    if (!wasmWrapper.loaded) {
+      await wasmWrapper.initialize(client_id);
+    }
     if (wasmWrapper) {
       getVideoWasm();
       requestAnimationFrame(displayVideo);
@@ -865,8 +990,9 @@ const VeryfiLens = (function () {
   };
 
   const startWasmLong = async (client_id) => {
-    wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize(client_id);
+    if (!wasmWrapper.loaded) {
+      await wasmWrapper.initialize(client_id);
+    }
     if (wasmWrapper) {
       getVideoWasmLong();
       requestAnimationFrame(displayVideo);
@@ -894,29 +1020,31 @@ const VeryfiLens = (function () {
   };
 
   const startUploadWasm = async (client_id) => {
-    wasmWrapper = new WasmWrapper();
     await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
-      wasmWrapper.setDocumentCallback(logDocument);
+     await wasmWrapper.setDocumentCallback(logDocument);
     }
   };
 
   const startWasmCC = async (client_id) => {
-    wasmWrapper = new WasmWrapper();
-    await wasmWrapper.initialize(client_id);
-    if (wasmWrapper) {
+    if (!wasmWrapper.loaded) {
+      await wasmWrapper.initialize(client_id);
+    }
+    if (wasmWrapper.loaded) {
       getCCVideo();
       requestAnimationFrame(displayVideo);
       intervalRef = setInterval(() => {
-        sendWasm("Document");
+        if (
+          cardData.status === "AutoCaptureResultDone" &&
+          CCPhase === "ScanningBack"
+        ) {
+          clearInterval(intervalRef); // Stop sending frames once condition is met
+        } else {
+          sendCardWasm();
+        }
       }, INTERVAL);
-      return () => {
-        clearInterval(intervalRef);
-      };
     }
   };
-
-  const sendCC = () => {};
 
   const setBlurStatus = (variance) => {
     if (variance >= 9) {
@@ -934,8 +1062,20 @@ const VeryfiLens = (function () {
     }
   };
 
+  function loadOpenCv(url) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = url;
+      script.onload = () => resolve(); // Correctly scoped resolve
+      script.onerror = () => reject(new Error(`Script load error for ${url}`));
+      document.body.appendChild(script);
+      cvReady = true;
+    });
+  }
+
   const isBlurry = async (image) => {
     console.log("[EVENT] Checking for blur");
+
     const src = cv.imread(image);
     let refVariance;
     let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
@@ -1083,6 +1223,9 @@ const VeryfiLens = (function () {
       device_uuid = new DeviceUUID(userAgent).get();
       console.log("[EVENT] Device ID", getDeviceID(device_uuid));
       if (session) {
+        if (!cvReady) {
+          loadOpenCv("./wasm/opencv.js");
+        }
         lensSessionKey = session;
         createCanvases();
         videoRef = document.getElementById("veryfi-video-ref");
@@ -1181,22 +1324,17 @@ const VeryfiLens = (function () {
       isDocumentProcess = true;
       userAgent = navigator.userAgent;
       device_uuid = new DeviceUUID(userAgent).get();
+      ShouldProcessCC = true;
+      CCPhase = "ScanningFront";
+      cardData = { status: "", number: "", name: "", date: "", cvv: "" };
 
       if (session) {
         lensSessionKey = session;
         const container = document.getElementById("veryfi-container");
         const generalClasses = "absolute sm:rounded-md h-full max-w-none";
-
-        createElement("canvas", "veryfi-frame-ref", `hidden`, container);
         createElement(
           "video",
           "veryfi-video-ref",
-          `${generalClasses} z-10`,
-          container
-        );
-        createElement(
-          "canvas",
-          "veryfi-box-ref",
           `${generalClasses} z-10`,
           container
         );
@@ -1242,6 +1380,10 @@ const VeryfiLens = (function () {
       clearInterval(intervalRef);
     },
 
+    getCardData: async () => {
+      return cardData;
+    },
+
     capture: async (setImage, setIsEditing) => {
       console.log("[EVENT] capture");
       const finalImage = await cropImage();
@@ -1260,6 +1402,7 @@ const VeryfiLens = (function () {
       finalImage = await cropWasm();
       setImage && setImage(finalImage);
       stopWasm();
+      wasmWrapper.releaseCallback();
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
@@ -1269,16 +1412,18 @@ const VeryfiLens = (function () {
       finalImage = await getLongImage();
       setImage && setImage(finalImage);
       stopWasm();
-     if (hasCoordinates) setIsDocument(true);
+      if (hasCoordinates) setIsDocument(true);
+      wasmWrapper.releaseCallback();
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
 
     captureUploaded: async (imageData) => {
-      return await createImageBitmap(imageData).then((bitmap) => {
-        const wasmOutput = wasmWrapper.cropDocument(bitmap);
+      return await createImageBitmap(imageData).then(async (bitmap) => {
+        const wasmOutput = await wasmWrapper.cropDocument(bitmap);
         const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-        // If a document is detected and cropped
+        // console.log(outputWidth, outputHeight, "output")
+
         if (outputWidth > 0 && outputHeight > 0) {
           const width = outputWidth;
           const height = outputHeight;
@@ -1289,17 +1434,16 @@ const VeryfiLens = (function () {
           const imageData = new ImageData(data, width, height);
           ctx.putImageData(imageData, 0, 0);
           setBlurStatus(blurLevel);
-          stopWasm();
-
+          wasmWrapper.releaseCallback()
           const imgString = cropImgCanvas.toDataURL("image/jpeg");
           image = cropImgCanvas;
-          releaseCanvas(boxRef);
           setIsDocument(true);
           coordinates = [];
           return imgString.split("data:image/jpeg;base64,")[1];
         } else {
           // Return the original, uncropped image
           return new Promise((resolve, reject) => {
+            setIsDocument(false);
             const reader = new FileReader();
             reader.readAsDataURL(imageData);
             reader.onload = function () {
@@ -1309,6 +1453,7 @@ const VeryfiLens = (function () {
             reader.onerror = function (error) {
               reject(error);
             };
+            // stopWasm()
           });
         }
       });
@@ -1407,6 +1552,7 @@ const VeryfiLens = (function () {
       frameRef && frameRef.remove();
       boxRef && boxRef.remove();
       cropImgRef && cropImgRef.remove();
+      // wasmWrapper && wasmWrapper.release();
       setIsDocument(false);
     },
 
@@ -1424,6 +1570,13 @@ const VeryfiLens = (function () {
         source: "lens.web",
       };
     },
+
+    getCardPhase: () => {
+      return CCPhase;
+    },
+    releaseWasm: () => {
+      wasmWrapper.release();
+    }
   };
 })();
 

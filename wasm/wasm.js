@@ -4,6 +4,13 @@ const processMethods = {
   StitcherProcess: "stitchProcessFrame",
 };
 
+const creditCardStatuses = [
+  "AutoCaptureResultWaiting",
+  "AutoCaptureResultErrorDocumentNotDetected",
+  "AutoCaptureResultDone",
+  "AutoCaptureResultNoModelDetected",
+];
+
 export class WasmWrapper {
   constructor() {
     this.loaded = false;
@@ -12,6 +19,7 @@ export class WasmWrapper {
     this.cardDetectorLoaded = false;
     this.firstRun = true;
     this.client_id = "";
+    this.callback = null
   }
 
   async simd() {
@@ -51,20 +59,19 @@ export class WasmWrapper {
     const features = await this.checkFeatures_();
     const { useSimd, useThreads } = features;
     if (!useThreads) {
-    console.warn(
-    "Threads disabled, seems that the security requirements for SharedArrayBuffer are not met"
-    );
-    return;
+      console.warn(
+        "Threads disabled, seems that the security requirements for SharedArrayBuffer are not met"
+      );
+      return;
     }
     const dir = this.selectDir(useSimd);
-// await this.loadModuleScript_("/wasm/" + dir + "/wasmHelpers.js");
-await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
+    await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
     this.wasmModule = await createModule();
     this.loaded = true;
+    console.log('Module initialized')
   }
 
-
-  setDocumentCallback(callback) {
+  async setDocumentCallback(callback) {
     if (!this.loaded || this.documentDetectorLoaded) return;
     this.wasmModule.ccall(
       "initDocumentDetector",
@@ -72,46 +79,63 @@ await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
       ["string"],
       [this.client_id]
     );
-    let documentCallback = this.wasmModule.addFunction(callback, "viiiiiiiii");
+    let internalCallback = (detectorResult, pointer, nDocs) => {
+      const corners = [];
+      const baseIndex = pointer / 4;
+      const numValues = 4 * 2 * nDocs;
+      for (let i = 0; i < numValues; i += 2) {
+        corners.push({
+          x: this.wasmModule.HEAP32[baseIndex + i],
+          y: this.wasmModule.HEAP32[baseIndex + i + 1],
+        });
+      }
+      callback(detectorResult, corners, nDocs);
+    };
+
+    this.callback = this.wasmModule.addFunction(
+      internalCallback,
+      "viii"
+    );
     this.documentDetectorLoaded = this.wasmModule.ccall(
       "setDocumentDetectorCallback",
       "boolean",
       ["number"],
-      [documentCallback]
+      [this.callback]
     );
   }
 
   initCardDetector() {
     if (!this.loaded) return false;
-    const success = this.wasmModule.ccall('initCardDetector', 'bool', [], []);
+    console.log('CC inited')
+    const success = this.wasmModule.ccall("initCardDetector", "bool", [], []);
     return success;
   }
-  
 
   setCardCallback(callback) {
     if (!this.loaded || this.cardDetectorLoaded) return;
-    this.wasmModule.ccall(
-      "initCardDetector",
-      'boolean'
-    );
-    let cardDetectorCallback = this.wasmModule.addFunction(callback, "viiiii");
+    this.wasmModule.ccall("initCardDetector", "boolean");
+    this.callback = this.wasmModule.addFunction(callback, "viiiii");
     this.cardDetectorLoaded = this.wasmModule.ccall(
       "setCardDetectorCallback",
       "boolean",
       ["number"],
-      [cardDetectorCallback]
+      [this.callback]
     );
   }
 
   setCreditCardCallback(callback) {
-    if (!this.loaded) return false;
-    let cardDetectorCallback = this.wasmModule.addFunction((autoCaptureState, namePtr, numPtr, datePtr, cvvPtr) => {
-      const name = this.wasmModule.UTF8ToString(namePtr);
-      const num = this.wasmModule.UTF8ToString(numPtr);
-      const date = this.wasmModule.UTF8ToString(datePtr);
-      const cvv = this.wasmModule.UTF8ToString(cvvPtr);
-      callback(autoCaptureState, name, num, date, cvv);
-    }, 'viiiii');
+    console.log('Detector')
+    // if (!this.loaded) return false;
+    this.callback = this.wasmModule.addFunction(
+      (autoCaptureState, namePtr, numPtr, datePtr, cvvPtr) => {
+        const name = this.wasmModule.UTF8ToString(namePtr);
+        const num = this.wasmModule.UTF8ToString(numPtr);
+        const date = this.wasmModule.UTF8ToString(datePtr);
+        const cvv = this.wasmModule.UTF8ToString(cvvPtr);
+        callback(autoCaptureState, name, num, date, cvv);
+      },
+      "viiiii"
+    );
     // viiiii
     // v -> void (return type)
     // i -> autoCaptureState (int)
@@ -119,73 +143,68 @@ await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
     // i -> num (pointer to char)
     // i -> date (pointer to char)
     // i -> cvv (pointer to char)
-  
+
     const success = this.wasmModule.ccall(
-      'setCreditCardCallback',
-      'boolean',
-      ['number'],
-      [cardDetectorCallback]
+      "setCreditCardCallback",
+      "boolean",
+      ["number"],
+      [this.callback]
     );
     return success;
   }
-  
-  creditCardProcessFrame(inputMatAddress, width, height) {
-    if (!this.loaded) return;
-    // Assuming inputMatAddress is a pointer to the image data in memory.
-    this.wasmModule.ccall('creditCardProcessFrame', null, ['number', 'number', 'number'], [inputMatAddress, width, height]);
-  }
-
-  creditCardGetResult() {
-    if (!this.loaded) return null;
-    const resultPtr = this.wasmModule.ccall('creditCardGetResult', 'number', [], []);
-    // Assuming resultPtr points to a structure or data you need.
-    // You'll need to extract that data from the pointer, similar to how you handle strings or other data types.
-  }
-  
-  
 
   setStitcherCallback(callback) {
     if (!this.loaded || this.stitcherLoaded) return;
+
     this.wasmModule.ccall("initStitcher", null, ["string"], [this.client_id]);
-    let stitcherCallback = this.wasmModule.addFunction(callback, "viiiiiiiiii");
-    // viiiiiiiii
-    // i -> StitcherResult
-    // i -> x1
-    // i -> y1
-    // i -> x2
-    // i -> y2
-    // i -> x3
-    // i -> y3
-    // i -> x4
-    // i -> y4
-    // i -> preview from MatResult Struct (use getResultFromBuffer)
+
+    let internalStitcherCallback = (
+      stitcherResult,
+      cornerPointer,
+      nDocs,
+      previewPointer
+    ) => {
+      const corners = [];
+      const baseIndex = cornerPointer / 4;
+      const numValues = 4 * 2 * nDocs;
+
+      for (let i = 0; i < numValues; i += 2) {
+        corners.push({
+          x: this.wasmModule.HEAP32[baseIndex + i],
+          y: this.wasmModule.HEAP32[baseIndex + i + 1],
+        });
+      }
+
+      const previewData = this.getResultFromBuffer(previewPointer);
+      callback(stitcherResult, corners, nDocs, previewData);
+    };
+
+    this.callback = this.wasmModule.addFunction(
+      internalStitcherCallback,
+      "viiii"
+    );
     this.stitcherLoaded = this.wasmModule.ccall(
       "setStitcherCallback",
       "boolean",
       ["number"],
-      [stitcherCallback]
+      [this.callback]
     );
   }
 
-  creditCardGetResult(bitmap) {
-    if (!this.cardDetectorLoaded) return;
-    const buffer = this.setBitmapOnWASMMemory_(bitmap);
-    let outputBuffer = this.wasmModule.ccall("creditCardGetResult",);
-    this.freeBuffer_(buffer);
-    return this.getResultFromBuffer(outputBuffer);
-  }
-
-  cropDocument(bitmap) {
+  async cropDocument(bitmap) {
     if (!this.documentDetectorLoaded) return;
+    console.log(bitmap, 'Incoming')
     const buffer = this.setBitmapOnWASMMemory_(bitmap);
+    
     let outputBuffer = this.wasmModule.ccall(
       "cropImage",
       "number",
       ["number", "number", "number", "boolean"],
       [buffer, bitmap.width, bitmap.height, true]
     );
-
     this.freeBuffer_(buffer);
+    console.log(this.getResultFromBuffer(outputBuffer), 'OutputBuffer')
+    this.documentDetectorLoaded = false;  
     return this.getResultFromBuffer(outputBuffer);
   }
 
@@ -208,7 +227,6 @@ await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
       ["number", "number", "number"],
       [buffer, bitmap.width, bitmap.height]
     );
-    // console.log(`Time ${Date.now() - time1}`);
     this.freeBuffer_(buffer);
   }
 
@@ -255,28 +273,32 @@ await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
     let useSimd = await this.simd();
     let useThreads = await this.threads();
     console.log(`SIMD available: ${useSimd}`);
-    console.log(`Threads available: ${useThreads}`)
-    !useThreads && console.log("Threads disabled, seems that the security requirements for SharedArrayBuffer are not met");
+    console.log(`Threads available: ${useThreads}`);
+    !useThreads &&
+      console.log(
+        "Threads disabled, seems that the security requirements for SharedArrayBuffer are not met"
+      );
     return { useSimd, useThreads };
   }
 
-/** @private */
+  /** @private */
   loadModuleScript_(jsUrl) {
     return new Promise((resolve, reject) => {
-let script = document.createElement("script");
-script.onload = () => {
-resolve();
-};
-script.onerror = () => {
-reject();
+      let script = document.createElement("script");
+      script.onload = () => {
+        resolve();
+      };
+      script.onerror = () => {
+        reject();
       };
       script.src = jsUrl;
       document.body.appendChild(script);
-});
-}
+    });
+  }
 
   /** @private */
   createBuffer_(bitmap) {
+    // console.log(bitmap)
     return this.wasmModule._malloc(bitmap.width * bitmap.height * 4);
   }
 
@@ -321,7 +343,125 @@ reject();
     return buffer;
   }
 
-  destroy() {
+  setCardDetectorCallback(
+    callback,
+    top = 30,
+    bottom = 80,
+    findNum = true,
+    findName = true,
+    findDate = true,
+    findCvv = true,
+    loadNumModel = true,
+    loadNameModel = true,
+    loadDateCvvModel = true,
+  ) {
+    if (bottom - top != 50)
+      throw new Error("botton - top should be equal to 50");
+    if (this.callback) return;
+    this.wasmModule.ccall(
+      "initCardDetector",
+      null,
+      ["string", "number", "number", "number", "number", "number", "number"],
+      [
+        this.client_id,
+        top,
+        bottom,
+        findNum ? 1 : 0,
+        findName ? 1 : 0,
+        findDate ? 1 : 0,
+        findCvv ? 1 : 0,
+        loadNumModel ? 1 : 0,
+        loadNameModel ? 1 : 0,
+        loadDateCvvModel ? 1 : 0,
+      ]
+    );
+    this.callback = this.wasmModule.addFunction(callback, "viiiii");
+    this.wasmModule.ccall(
+      "setCreditCardCallback",
+      "boolean",
+      ["number"],
+      [this.callback]
+    );
+  }
+
+  ptrToString(ptr) {
+    const memory = this.wasmModule.HEAPU8;
+    let end = ptr;
+    while (memory[end] && end - ptr < 50) end++;
+    const subarray = Uint8ClampedArray.from(memory.subarray(ptr, end));
+    return new TextDecoder("utf-8").decode(subarray);
+  }
+
+  parseCreditCardCallback(status, namePtr, numPtr, datePtr, cvvPtr) {
+    const creditCardStatus = creditCardStatuses[status];
+    const name = this.ptrToString(namePtr);
+    const number = this.ptrToString(numPtr);
+    const date = this.ptrToString(datePtr);
+    const cvv = this.ptrToString(cvvPtr);
+    return {
+      status: creditCardStatus,
+      name: name,
+      number: number,
+      date: date,
+      cvv: cvv,
+    };
+  }
+
+  resetAutoCapture(
+    findNum = true,
+    findName = true,
+    findDate = true,
+    findCvv = true
+  ) {
+    this.wasmModule.ccall(
+      "resetAutoCapture",
+      null,
+      ["number", "number", "number", "number"],
+      [findNum ? 1 : 0, findName ? 1 : 0, findDate ? 1 : 0, findCvv ? 1 : 0]
+    );
+    // console.log(
+    //   `AutoCapture reset with findNum: ${findNum}, findName: ${findName}, findDate: ${findDate}, findCvv: ${findCvv}`
+    // )
+  }
+
+  forceAutoCapture(bitmap) {
+    //stop sending frames
+    const blob = this.convertBitmapToBlob_(bitmap);
+    const buffer = this.createBuffer_(bitmap);
+    this.wasmModule.HEAPU8.set(blob.data, buffer);
+    const resultAddress = this.wasmModule.ccall(
+      "creditCardForceResult",
+      "number",
+      ["number", "number", "number"],
+      [buffer, bitmap.width, bitmap.height]
+    );
+    this.freeBuffer_(buffer);
+    const namePtr = this.wasmModule.getValue(resultAddress, "i32");
+    const numPtr = this.wasmModule.getValue(resultAddress + 4, "i32");
+    const datePtr = this.wasmModule.getValue(resultAddress + 8, "i32");
+    const cvvPtr = this.wasmModule.getValue(resultAddress + 12, "i32");
+    return parseCreditCardCallback(2, namePtr, numPtr, datePtr, cvvPtr);
+  }
+
+  processFrame(bitmap) {
+    const blob = this.convertBitmapToBlob_(bitmap);
+    const buffer = this.createBuffer_(bitmap);
+    this.wasmModule.HEAPU8.set(blob.data, buffer);
+    this.wasmModule.ccall(
+      "creditCardProcessFrame",
+      null,
+      ["number", "number", "number"],
+      [buffer, bitmap.width, bitmap.height]
+    );
+    this.freeBuffer_(buffer);
+  }
+
+  release() {
     this.wasmModule.ccall("release");
+  }
+
+  releaseCallback() {
+    this.wasmModule.removeFunction(this.callback);
+    this.callback = null;
   }
 }
