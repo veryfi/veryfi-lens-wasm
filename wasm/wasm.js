@@ -19,7 +19,7 @@ export class WasmWrapper {
     this.cardDetectorLoaded = false;
     this.firstRun = true;
     this.client_id = "";
-    this.callback = null
+    this.callback = null;
   }
 
   async simd() {
@@ -68,7 +68,7 @@ export class WasmWrapper {
     await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
     this.wasmModule = await createModule();
     this.loaded = true;
-    console.log('Module initialized')
+    console.log("Module initialized");
   }
 
   async setDocumentCallback(callback) {
@@ -92,10 +92,7 @@ export class WasmWrapper {
       callback(detectorResult, corners, nDocs);
     };
 
-    this.callback = this.wasmModule.addFunction(
-      internalCallback,
-      "viii"
-    );
+    this.callback = this.wasmModule.addFunction(internalCallback, "viii");
     this.documentDetectorLoaded = this.wasmModule.ccall(
       "setDocumentDetectorCallback",
       "boolean",
@@ -106,7 +103,7 @@ export class WasmWrapper {
 
   initCardDetector() {
     if (!this.loaded) return false;
-    console.log('CC inited')
+    console.log("CC inited");
     const success = this.wasmModule.ccall("initCardDetector", "bool", [], []);
     return success;
   }
@@ -124,7 +121,7 @@ export class WasmWrapper {
   }
 
   setCreditCardCallback(callback) {
-    console.log('Detector')
+    console.log("Detector");
     // if (!this.loaded) return false;
     this.callback = this.wasmModule.addFunction(
       (autoCaptureState, namePtr, numPtr, datePtr, cvvPtr) => {
@@ -193,9 +190,9 @@ export class WasmWrapper {
 
   async cropDocument(bitmap) {
     if (!this.documentDetectorLoaded) return;
-    console.log(bitmap, 'Incoming')
+    // console.log(bitmap, 'Incoming')
     const buffer = this.setBitmapOnWASMMemory_(bitmap);
-    
+
     let outputBuffer = this.wasmModule.ccall(
       "cropImage",
       "number",
@@ -203,8 +200,7 @@ export class WasmWrapper {
       [buffer, bitmap.width, bitmap.height, true]
     );
     this.freeBuffer_(buffer);
-    console.log(this.getResultFromBuffer(outputBuffer), 'OutputBuffer')
-    this.documentDetectorLoaded = false;  
+    // console.log(this.getResultFromBuffer(outputBuffer), 'OutputBuffer')
     return this.getResultFromBuffer(outputBuffer);
   }
 
@@ -336,9 +332,15 @@ export class WasmWrapper {
   }
 
   /** @private */
-  setBitmapOnWASMMemory_(bitmap) {
+     setBitmapOnWASMMemory_(bitmap) {
     const blob = this.convertBitmapToBlob_(bitmap);
     const buffer = this.createBuffer_(bitmap);
+    // console.log(buffer, 'BUFFER')
+    // console.log(blob.data.length, 'BLOB')
+    // console.log(buffer + blob.data.length, 'BUFFER + BLOB')
+    // console.log(this.wasmModule.HEAPU8.length, 'MEMORY')
+    // console.log(buffer + blob.data.length < this.wasmModule.HEAPU8.length, 'DIFF')
+    // await new Promise(resolve => setTimeout(resolve, 500));
     this.wasmModule.HEAPU8.set(blob.data, buffer);
     return buffer;
   }
@@ -353,7 +355,7 @@ export class WasmWrapper {
     findCvv = true,
     loadNumModel = true,
     loadNameModel = true,
-    loadDateCvvModel = true,
+    loadDateCvvModel = true
   ) {
     if (bottom - top != 50)
       throw new Error("botton - top should be equal to 50");

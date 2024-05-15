@@ -697,7 +697,7 @@ const VeryfiLens = (function () {
           if (cardData.status == "AutoCaptureResultDone") {
             ShouldProcessCC = false;
             wasmWrapper.resetAutoCapture(true, true, true, true);
-            wasmWrapper.releaseCallback();
+            // wasmWrapper.releaseCallback();
           }
       }
     }
@@ -1020,9 +1020,11 @@ const VeryfiLens = (function () {
   };
 
   const startUploadWasm = async (client_id) => {
-    await wasmWrapper.initialize(client_id);
+    if (!wasmWrapper.loaded) {
+      await wasmWrapper.initialize(client_id);
+    }
     if (wasmWrapper) {
-     await wasmWrapper.setDocumentCallback(logDocument);
+      await wasmWrapper.setDocumentCallback(logDocument);
     }
   };
 
@@ -1217,6 +1219,23 @@ const VeryfiLens = (function () {
     });
   };
 
+  async function convertToRGBA(imageSrc) {
+    const img = new Image();
+    img.src = URL.createObjectURL(imageSrc);
+    await new Promise((resolve) => {
+      img.onload = resolve;
+    });
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+
+    const rgbaImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return rgbaImageData;
+  }
+
   return {
     init: async (session, client_id) => {
       userAgent = navigator.userAgent;
@@ -1402,7 +1421,7 @@ const VeryfiLens = (function () {
       finalImage = await cropWasm();
       setImage && setImage(finalImage);
       stopWasm();
-      wasmWrapper.releaseCallback();
+      // wasmWrapper.releaseCallback();
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
@@ -1413,48 +1432,51 @@ const VeryfiLens = (function () {
       setImage && setImage(finalImage);
       stopWasm();
       if (hasCoordinates) setIsDocument(true);
-      wasmWrapper.releaseCallback();
+      // wasmWrapper.releaseCallback();
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
 
     captureUploaded: async (imageData) => {
-      return await createImageBitmap(imageData).then(async (bitmap) => {
-        const wasmOutput = await wasmWrapper.cropDocument(bitmap);
-        const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-        // console.log(outputWidth, outputHeight, "output")
+      const RGBAImage = await convertToRGBA(imageData);
+      return await createImageBitmap(RGBAImage).then(async (bitmap) => {
+        if (wasmWrapper.documentDetectorLoaded) {
+          const wasmOutput = await wasmWrapper.cropDocument(bitmap);
+          // console.log(wasmOutput, "output");
+          const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
 
-        if (outputWidth > 0 && outputHeight > 0) {
-          const width = outputWidth;
-          const height = outputHeight;
-          const cropImgCanvas = document.createElement("canvas");
-          cropImgCanvas.height = height;
-          cropImgCanvas.width = width;
-          const ctx = cropImgCanvas.getContext("2d");
-          const imageData = new ImageData(data, width, height);
-          ctx.putImageData(imageData, 0, 0);
-          setBlurStatus(blurLevel);
-          wasmWrapper.releaseCallback()
-          const imgString = cropImgCanvas.toDataURL("image/jpeg");
-          image = cropImgCanvas;
-          setIsDocument(true);
-          coordinates = [];
-          return imgString.split("data:image/jpeg;base64,")[1];
+          if (outputWidth > 0 && outputHeight > 0) {
+            const width = outputWidth;
+            const height = outputHeight;
+            const cropImgCanvas = document.createElement("canvas");
+            cropImgCanvas.height = height;
+            cropImgCanvas.width = width;
+            const ctx = cropImgCanvas.getContext("2d");
+            const imageData = new ImageData(data, width, height);
+            ctx.putImageData(imageData, 0, 0);
+            setBlurStatus(blurLevel);
+            const imgString = cropImgCanvas.toDataURL("image/jpeg");
+            image = cropImgCanvas;
+            setIsDocument(true);
+            coordinates = [];
+            return imgString.split("data:image/jpeg;base64,")[1];
+          } else {
+            // Return the original, uncropped image
+            return new Promise((resolve, reject) => {
+              setIsDocument(false);
+              const reader = new FileReader();
+              reader.readAsDataURL(imageData);
+              reader.onload = function () {
+                const base64Image = reader.result.split(",")[1];
+                resolve(base64Image);
+              };
+              reader.onerror = function (error) {
+                reject(error);
+              };
+            });
+          }
         } else {
-          // Return the original, uncropped image
-          return new Promise((resolve, reject) => {
-            setIsDocument(false);
-            const reader = new FileReader();
-            reader.readAsDataURL(imageData);
-            reader.onload = function () {
-              const base64Image = reader.result.split(",")[1];
-              resolve(base64Image);
-            };
-            reader.onerror = function (error) {
-              reject(error);
-            };
-            // stopWasm()
-          });
+          console.log("Wasm not loaded");
         }
       });
     },
@@ -1552,7 +1574,6 @@ const VeryfiLens = (function () {
       frameRef && frameRef.remove();
       boxRef && boxRef.remove();
       cropImgRef && cropImgRef.remove();
-      // wasmWrapper && wasmWrapper.release();
       setIsDocument(false);
     },
 
@@ -1576,7 +1597,7 @@ const VeryfiLens = (function () {
     },
     releaseWasm: () => {
       wasmWrapper.release();
-    }
+    },
   };
 })();
 
