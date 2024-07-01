@@ -636,14 +636,22 @@ const VeryfiLens = (function () {
     console.log(
       `Detector Result: ${detectorResult}, Documents Detected: ${nDocs}`
     );
-    for (let i = 0; i < nDocs; i++) {
-      const offset = i * 4;
-      coordinates = [
-        [corners[offset].x, corners[offset].y],
-        [corners[offset + 1].x, corners[offset + 1].y],
-        [corners[offset + 2].x, corners[offset + 2].y],
-        [corners[offset + 3].x, corners[offset + 3].y],
-      ];
+    if (nDocs > 0) {
+      for (let i = 0; i < nDocs; i++) {
+        const offset = i * 4;
+        const coordinates = [
+          [corners[offset].x, corners[offset].y],
+          [corners[offset + 1].x, corners[offset + 1].y],
+          [corners[offset + 2].x, corners[offset + 2].y],
+          [corners[offset + 3].x, corners[offset + 3].y],
+        ];
+
+        // Call drawContours with the obtained coordinates
+        drawContours(coordinates);
+      }
+    } else {
+      // No documents detected, clear the canvas
+      drawContours([]);
     }
   }
 
@@ -706,24 +714,34 @@ const VeryfiLens = (function () {
   const drawContours = (contours) => {
     const video = videoRef;
     const BoxCanvas = boxRef;
-
     if (video && BoxCanvas) {
       BoxCanvas.width = video.videoWidth;
       BoxCanvas.height = video.videoHeight;
       let ctx = BoxCanvas.getContext("2d");
 
       if (ctx) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(contours[0][0], contours[0][1]);
-        ctx.lineTo(contours[1][0], contours[1][1]);
-        ctx.lineTo(contours[2][0], contours[2][1]);
-        ctx.lineTo(contours[3][0], contours[3][1]);
-        ctx.fillStyle = boxColor;
-        ctx.fill();
-        setCoordinates(contours);
-        setHasCoordinates(true);
-        ctx.restore();
+        // Clear the canvas before drawing new contours
+        ctx.clearRect(0, 0, BoxCanvas.width, BoxCanvas.height);
+
+        if (contours && contours.length === 4) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(contours[0][0], contours[0][1]);
+          ctx.lineTo(contours[1][0], contours[1][1]);
+          ctx.lineTo(contours[2][0], contours[2][1]);
+          ctx.lineTo(contours[3][0], contours[3][1]);
+          ctx.closePath(); // Close the path to complete the contour
+          ctx.fillStyle = boxColor;
+          ctx.fill();
+          setCoordinates(contours);
+          setHasCoordinates(true);
+          ctx.restore();
+        } else {
+          // Handle the case where no valid contours are provided
+          // Clear any previous coordinates
+          setCoordinates([]);
+          setHasCoordinates(false);
+        }
       }
     }
   };
@@ -1575,6 +1593,7 @@ const VeryfiLens = (function () {
       boxRef && boxRef.remove();
       cropImgRef && cropImgRef.remove();
       setIsDocument(false);
+      // wasmWrapper.releaseCallback()
     },
 
     getDeviceData: async () => {
