@@ -448,6 +448,80 @@ const VeryfiLens = (function () {
     }
   };
 
+  const getChecksVideo = async () => {
+    const isDesktop =
+      !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isLandscape = window.innerWidth > window.innerHeight;
+
+    if (navigator) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log(devices);
+        const videoDevices = devices.filter(
+          (device) => device.kind === "videoinput"
+        );
+
+        let useMainCamera = false;
+        let mainCameraDeviceId = null;
+        if (isAndroid) {
+          for (const device of videoDevices) {
+            if (device.label.includes("camera2 0")) {
+              console.log("Main camera found", device.deviceId);
+              mainCameraDeviceId = device.deviceId;
+              useMainCamera = true;
+              break;
+            }
+          }
+        }
+
+        let videoConfig = {
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+        };
+
+        if (isDesktop) {
+          // Force portrait mode for desktop
+          videoConfig.aspectRatio = 9 / 16;
+        } else {
+          // For mobile, adapt to device orientation
+          videoConfig.aspectRatio = isLandscape ? 16 / 9 : 9 / 16;
+        }
+
+        if (useMainCamera) {
+          videoConfig.deviceId = { exact: mainCameraDeviceId };
+        } else {
+          videoConfig.facingMode = "environment";
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConfig,
+        });
+        const video = videoRef;
+        video.srcObject = stream;
+        wasmWrapper.setDocumentCallback(logDocument);
+
+        // Add event listener to handle orientation changes on mobile
+        if (!isDesktop) {
+          window.addEventListener("orientationchange", async () => {
+            const isNewLandscape = window.innerWidth > window.innerHeight;
+            videoConfig.aspectRatio = isNewLandscape ? 16 / 9 : 9 / 16;
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              video: videoConfig,
+            });
+            video.srcObject = newStream;
+          });
+        }
+      } catch (error) {
+        console.error("Error accessing the camera", error);
+      }
+    } else {
+      console.log("No navigator available");
+    }
+  };
+
   const loadImage = (src) => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -466,8 +540,8 @@ const VeryfiLens = (function () {
     if (videoRef) {
       let rCorners;
       const video = videoRef;
-      let videoHeight = Number(video.videoHeight);
-      let videoWidth = Number(video.videoWidth);
+      let videoHeight = video.videoHeight;
+      let videoWidth = video.videoWidth;
       const fullSizeCanvas = document.createElement("canvas");
       fullSizeCanvas.width = videoWidth;
       fullSizeCanvas.height = videoHeight;
@@ -484,9 +558,7 @@ const VeryfiLens = (function () {
           createImageBitmap(fullSizeImage).then((bitmap) => {
             fullSizeImage = bitmap;
             wasmWrapper.processDocument(bitmap, mode);
-            rCorners = coordinates.map((corner) =>
-              corner.map((cord) => cord / scale)
-            );
+            rCorners = coordinates.map((corner) => corner);
             if (
               rCorners.length &&
               rCorners.some((subArr) => subArr.reduce((a, b) => a + b, 0) !== 0)
@@ -509,7 +581,6 @@ const VeryfiLens = (function () {
         }
 
         releaseCanvas(fullSizeCanvas);
-        releaseCanvas(boxRef);
       }
     }
   };
@@ -718,30 +789,58 @@ const VeryfiLens = (function () {
       BoxCanvas.width = video.videoWidth;
       BoxCanvas.height = video.videoHeight;
       let ctx = BoxCanvas.getContext("2d");
-
-      if (ctx) {
-        // Clear the canvas before drawing new contours
+  
+      if (ctx && contours && contours.length === 4) {
         ctx.clearRect(0, 0, BoxCanvas.width, BoxCanvas.height);
-
-        if (contours && contours.length === 4) {
-          ctx.save();
-          ctx.beginPath();
-          ctx.moveTo(contours[0][0], contours[0][1]);
-          ctx.lineTo(contours[1][0], contours[1][1]);
-          ctx.lineTo(contours[2][0], contours[2][1]);
-          ctx.lineTo(contours[3][0], contours[3][1]);
-          ctx.closePath(); // Close the path to complete the contour
-          ctx.fillStyle = boxColor;
-          ctx.fill();
-          setCoordinates(contours);
-          setHasCoordinates(true);
-          ctx.restore();
-        } else {
-          // Handle the case where no valid contours are provided
-          // Clear any previous coordinates
-          setCoordinates([]);
-          setHasCoordinates(false);
-        }
+        ctx.save();
+        ctx.beginPath();
+  
+        const scaleX = BoxCanvas.width / video.videoWidth;
+        const scaleY = BoxCanvas.height / video.videoHeight;
+  
+        // Calculate the bounding box of the contours
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        contours.forEach(([x, y]) => {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        });
+  
+        // Expand the bounding box slightly to ensure 100% coverage
+        const expandFactor = 1;
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        minX = centerX - (centerX - minX) * expandFactor;
+        maxX = centerX + (maxX - centerX) * expandFactor;
+        minY = centerY - (centerY - minY) * expandFactor;
+        maxY = centerY + (maxY - centerY) * expandFactor;
+  
+        // Ensure the expanded box doesn't go outside the canvas
+        minX = Math.max(0, minX * scaleX);
+        minY = Math.max(0, minY * scaleY);
+        maxX = Math.min(BoxCanvas.width, maxX * scaleX);
+        maxY = Math.min(BoxCanvas.height, maxY * scaleY);
+  
+        // Draw the expanded rectangle
+        ctx.moveTo(minX, minY);
+        ctx.lineTo(maxX, minY);
+        ctx.lineTo(maxX, maxY);
+        ctx.lineTo(minX, maxY);
+        ctx.closePath();
+  
+        ctx.fillStyle = boxColor;
+        ctx.fill();
+  
+        // Update coordinates with the expanded box
+        setCoordinates([[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]]);
+        setHasCoordinates(true);
+        ctx.restore();
+      } else {
+        // Handle the case where no valid contours are provided
+        ctx.clearRect(0, 0, BoxCanvas.width, BoxCanvas.height);
+        setCoordinates([]);
+        setHasCoordinates(false);
       }
     }
   };
@@ -1066,6 +1165,22 @@ const VeryfiLens = (function () {
     }
   };
 
+  const startWasmChecks = async (client_id) => {
+    if (!wasmWrapper.loaded) {
+      await wasmWrapper.initialize(client_id);
+    }
+    if (wasmWrapper) {
+      getChecksVideo();
+      requestAnimationFrame(displayVideo);
+      intervalRef = setInterval(() => {
+        sendWasm("Document");
+      }, INTERVAL);
+      return () => {
+        clearInterval(intervalRef);
+      };
+    }
+  };
+
   const setBlurStatus = (variance) => {
     if (variance >= 9) {
       blurStatus = false;
@@ -1237,6 +1352,97 @@ const VeryfiLens = (function () {
     });
   };
 
+  const createCheckCanvases = () => {
+    const container = document.getElementById("veryfi-container");
+    let isDesktop = window.innerWidth >= 1024;
+
+    const setElementStyles = (element, styles) => {
+      Object.assign(element.style, styles);
+    };
+
+    const createElementWithStyles = (tag, id, styles, parent) => {
+      const element = document.createElement(tag);
+      element.id = id;
+      setElementStyles(element, styles);
+      parent.appendChild(element);
+      return element;
+    };
+
+    const updateElementsSize = () => {
+      isDesktop = window.innerWidth >= 1024;
+      const isPortrait = window.innerHeight > window.innerWidth;
+
+      let width, height;
+      if (isDesktop) {
+        width = "500px";
+        height = "100vh";
+      } else if (isPortrait) {
+        width = "100vw";
+        height = "100vh";
+      } else {
+        width = "100vw";
+        height = "100vh";
+      }
+
+      const elementStyles = {
+        width: width,
+        height: height,
+      };
+
+      setElementStyles(container, elementStyles);
+      [cropImgRef, videoRef, boxRef, frameRef].forEach((el) => {
+        if (el) setElementStyles(el, elementStyles);
+      });
+    };
+
+    const generalStyles = {
+      position: "absolute",
+      top: 0,
+      left: 0,
+    };
+
+    cropImgRef = createElementWithStyles(
+      "canvas",
+      "veryfi-crop-img-ref",
+      { ...generalStyles, zIndex: 30 },
+      container
+    );
+
+    frameRef = createElementWithStyles(
+      "canvas",
+      "veryfi-frame-ref",
+      { ...generalStyles, display: "none" },
+      container
+    );
+
+    videoRef = createElementWithStyles(
+      "video",
+      "veryfi-video-ref",
+      { ...generalStyles, objectFit: "cover" },
+      container
+    );
+
+    boxRef = createElementWithStyles(
+      "canvas",
+      "veryfi-box-ref",
+      { ...generalStyles, zIndex: 10 },
+      container
+    );
+
+    updateElementsSize();
+
+    window.addEventListener("resize", updateElementsSize);
+    window.addEventListener("orientationchange", updateElementsSize);
+
+    return {
+      cleanup: () => {
+        window.removeEventListener("resize", updateElementsSize);
+        window.removeEventListener("orientationchange", updateElementsSize);
+      },
+    };
+  };
+
+
   async function convertToRGBA(imageSrc) {
     const img = new Image();
     img.src = URL.createObjectURL(imageSrc);
@@ -1385,6 +1591,34 @@ const VeryfiLens = (function () {
         boxRef = document.getElementById("veryfi-box-ref");
         if (client_id) {
           startWasmCC(client_id);
+        } else {
+          console.log("No client id provided");
+          return;
+        }
+      } else {
+        console.log("No session token provided");
+        return;
+      }
+    },
+
+    initChecks: async (session, client_id) => {
+      isDocumentProcess = true;
+      userAgent = navigator.userAgent;
+      device_uuid = new DeviceUUID(userAgent).get();
+
+      if (session) {
+        lensSessionKey = session;
+        createCheckCanvases();
+        videoRef = document.getElementById("veryfi-video-ref");
+        const video = videoRef;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.autoplay = true;
+        frameRef = document.getElementById("veryfi-frame-ref");
+        boxRef = document.getElementById("veryfi-box-ref");
+        cropImgRef = document.getElementById("veryfi-crop-img-ref");
+        if (client_id) {
+          startWasmChecks(client_id);
         } else {
           console.log("No client id provided");
           return;
