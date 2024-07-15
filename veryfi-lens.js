@@ -46,6 +46,7 @@ const VeryfiLens = (function () {
   let userAgent = null;
   let device_uuid = null;
   let fullSizeImage;
+  let torchTrack = null
   // let wasmWrapper = null;
   let finalImage;
 
@@ -237,6 +238,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
           height: { ideal: 2160 },
+          advanced: [{ torch: true }] 
         };
 
         if (isAndroid) {
@@ -273,6 +275,7 @@ const VeryfiLens = (function () {
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
+          torchTrack = stream.getVideoTracks()[0];
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
@@ -296,6 +299,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 2560 },
           height: { ideal: 1440 },
+          advanced: [{ torch: true }] 
         };
 
         if (isAndroid) {
@@ -329,10 +333,12 @@ const VeryfiLens = (function () {
             const video = videoRef;
             video.srcObject = stream;
             wasmWrapper.setStitcherCallback(logLongDocument);
+            torchTrack = stream.getVideoTracks()[0];
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
+          
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
@@ -369,6 +375,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
           height: { ideal: 2160 },
+          advanced: [{ torch: true }] 
         };
 
         if (useMainCamera) {
@@ -377,16 +384,13 @@ const VeryfiLens = (function () {
           videoConfig.facingMode = "environment";
         }
 
-        await navigator.mediaDevices
-          .getUserMedia({ video: videoConfig })
-          .then((stream) => {
-            const video = videoRef;
-            video.srcObject = stream;
-            wasmWrapper.setDocumentCallback(logDocument);
-          })
-          .catch((err) => {
-            console.log(`[Event] Error: ${err}`);
-          });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConfig });
+        const video = videoRef;
+        video.srcObject = stream;
+        wasmWrapper.setDocumentCallback(logDocument);
+
+        // Store the video track for torch control
+        torchTrack = stream.getVideoTracks()[0];
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
@@ -423,6 +427,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
           height: { ideal: 2160 },
+          advanced: [{ torch: true }]
         };
 
         if (useMainCamera) {
@@ -436,6 +441,7 @@ const VeryfiLens = (function () {
             const video = videoRef;
             video.srcObject = stream;
             wasmWrapper.setCardDetectorCallback(logCard);
+            torchTrack = stream.getVideoTracks()[0];
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
@@ -480,6 +486,7 @@ const VeryfiLens = (function () {
         let videoConfig = {
           width: { ideal: 3840 },
           height: { ideal: 2160 },
+          advanced: [{ torch: true }] 
         };
 
         if (isDesktop) {
@@ -514,11 +521,31 @@ const VeryfiLens = (function () {
             video.srcObject = newStream;
           });
         }
+        torchTrack = stream.getVideoTracks()[0];
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
     } else {
       console.log("No navigator available");
+    }
+  };
+
+  const toggleTorchLight = async () => {
+    if (torchTrack) {
+      const capabilities = torchTrack.getCapabilities();
+      if (capabilities.torch) {
+        try {
+          await torchTrack.applyConstraints({
+            advanced: [{ torch: !torchTrack.getConstraints().advanced?.[0]?.torch }]
+          });
+        } catch (err) {
+          console.error("Error toggling torch:", err);
+        }
+      } else {
+        console.log("Torch not supported on this device");
+      }
+    } else {
+      console.log("Camera not initialized");
     }
   };
 
@@ -1851,6 +1878,10 @@ const VeryfiLens = (function () {
     releaseWasm: () => {
       wasmWrapper.release();
     },
+
+    toggleTorch: () => {
+      toggleTorchLight()
+    }
   };
 })();
 
