@@ -17,9 +17,13 @@ export class WasmWrapper {
     this.documentDetectorLoaded = false;
     this.stitcherLoaded = false;
     this.cardDetectorLoaded = false;
+    this.lcdDetectorLoaded = false;
     this.firstRun = true;
     this.client_id = "";
-    this.callback = null;
+    this.callback = null
+    this.frameCount = 0;
+    this.lcdDetectionInterval = 5;
+    this.lcdResult = null;
   }
 
   async simd() {
@@ -68,10 +72,10 @@ export class WasmWrapper {
     await this.loadModuleScript_("/wasm/" + dir + "/veryfi-wasm.js");
     this.wasmModule = await createModule();
     this.loaded = true;
-    console.log("Module initialized");
+    console.log('Module initialized')
   }
 
-  async setDocumentCallback(callback) {
+  setDocumentCallback(callback) {
     if (!this.loaded || this.documentDetectorLoaded) return;
     this.wasmModule.ccall(
       "initDocumentDetector",
@@ -92,7 +96,10 @@ export class WasmWrapper {
       callback(detectorResult, corners, nDocs);
     };
 
-    this.callback = this.wasmModule.addFunction(internalCallback, "viii");
+    this.callback = this.wasmModule.addFunction(
+      internalCallback,
+      "viii"
+    );
     this.documentDetectorLoaded = this.wasmModule.ccall(
       "setDocumentDetectorCallback",
       "boolean",
@@ -103,7 +110,7 @@ export class WasmWrapper {
 
   initCardDetector() {
     if (!this.loaded) return false;
-    console.log("CC inited");
+    console.log('CC inited')
     const success = this.wasmModule.ccall("initCardDetector", "bool", [], []);
     return success;
   }
@@ -121,7 +128,7 @@ export class WasmWrapper {
   }
 
   setCreditCardCallback(callback) {
-    console.log("Detector");
+    console.log('Detector')
     // if (!this.loaded) return false;
     this.callback = this.wasmModule.addFunction(
       (autoCaptureState, namePtr, numPtr, datePtr, cvvPtr) => {
@@ -188,19 +195,17 @@ export class WasmWrapper {
     );
   }
 
-  async cropDocument(bitmap) {
+  cropDocument(bitmap) {
     if (!this.documentDetectorLoaded) return;
-    // console.log(bitmap, 'Incoming')
     const buffer = this.setBitmapOnWASMMemory_(bitmap);
-
     let outputBuffer = this.wasmModule.ccall(
       "cropImage",
       "number",
       ["number", "number", "number", "boolean"],
       [buffer, bitmap.width, bitmap.height, true]
     );
+
     this.freeBuffer_(buffer);
-    // console.log(this.getResultFromBuffer(outputBuffer), 'OutputBuffer')
     return this.getResultFromBuffer(outputBuffer);
   }
 
@@ -332,15 +337,9 @@ export class WasmWrapper {
   }
 
   /** @private */
-     setBitmapOnWASMMemory_(bitmap) {
+  setBitmapOnWASMMemory_(bitmap) {
     const blob = this.convertBitmapToBlob_(bitmap);
     const buffer = this.createBuffer_(bitmap);
-    // console.log(buffer, 'BUFFER')
-    // console.log(blob.data.length, 'BLOB')
-    // console.log(buffer + blob.data.length, 'BUFFER + BLOB')
-    // console.log(this.wasmModule.HEAPU8.length, 'MEMORY')
-    // console.log(buffer + blob.data.length < this.wasmModule.HEAPU8.length, 'DIFF')
-    // await new Promise(resolve => setTimeout(resolve, 500));
     this.wasmModule.HEAPU8.set(blob.data, buffer);
     return buffer;
   }
@@ -355,7 +354,8 @@ export class WasmWrapper {
     findCvv = true,
     loadNumModel = true,
     loadNameModel = true,
-    loadDateCvvModel = true
+    loadDateCvvModel = true,
+    preFetchLCDModel = true
   ) {
     if (bottom - top != 50)
       throw new Error("botton - top should be equal to 50");
@@ -363,7 +363,7 @@ export class WasmWrapper {
     this.wasmModule.ccall(
       "initCardDetector",
       null,
-      ["string", "number", "number", "number", "number", "number", "number"],
+      ["string", "number", "number", "number", "number", "number", "number", "number"],
       [
         this.client_id,
         top,
@@ -375,8 +375,10 @@ export class WasmWrapper {
         loadNumModel ? 1 : 0,
         loadNameModel ? 1 : 0,
         loadDateCvvModel ? 1 : 0,
+        preFetchLCDModel ? 1 : 0,
       ]
     );
+    this.lcdDetectorLoaded = true;
     this.callback = this.wasmModule.addFunction(callback, "viiiii");
     this.wasmModule.ccall(
       "setCreditCardCallback",
@@ -421,9 +423,27 @@ export class WasmWrapper {
       ["number", "number", "number", "number"],
       [findNum ? 1 : 0, findName ? 1 : 0, findDate ? 1 : 0, findCvv ? 1 : 0]
     );
-    // console.log(
-    //   `AutoCapture reset with findNum: ${findNum}, findName: ${findName}, findDate: ${findDate}, findCvv: ${findCvv}`
-    // )
+  }
+
+   detectLCD(bitmap) {
+    if (!this.loaded || !this.lcdDetectorLoaded) {
+      console.warn("LCD detector not initialized");
+      return null;
+    }
+    const buffer = this.setBitmapOnWASMMemory_(bitmap);
+    let outputBuffer = this.wasmModule.ccall(
+      "detectLCD",
+      "number",
+      ["number", "number", "number"],
+      [buffer, bitmap.width, bitmap.height]
+    );
+    this.freeBuffer_(buffer);
+    if (outputBuffer === 0) {
+      console.warn("LCD detection failed or not ready");
+      return null;
+    }
+    const result = new Float32Array(this.wasmModule.HEAPF32.buffer, outputBuffer, 2);
+    return { lcdProb: result[0], objProb: result[1] };
   }
 
   forceAutoCapture(bitmap) {
@@ -446,8 +466,9 @@ export class WasmWrapper {
   }
 
   processFrame(bitmap) {
-    const blob = this.convertBitmapToBlob_(bitmap);
-    const buffer = this.createBuffer_(bitmap);
+   const blob = this.convertBitmapToBlob_(bitmap);
+   const buffer = this.createBuffer_(bitmap);
+   
     this.wasmModule.HEAPU8.set(blob.data, buffer);
     this.wasmModule.ccall(
       "creditCardProcessFrame",
@@ -455,6 +476,12 @@ export class WasmWrapper {
       ["number", "number", "number"],
       [buffer, bitmap.width, bitmap.height]
     );
+
+    if (this.frameCount % this.lcdDetectionInterval === 0) {
+      this.lcdResult = this.detectLCD(bitmap);
+    }
+    this.frameCount++;
+
     this.freeBuffer_(buffer);
   }
 
@@ -462,8 +489,15 @@ export class WasmWrapper {
     this.wasmModule.ccall("release");
   }
 
+  destroy() {
+    this.wasmModule.ccall("release");
+  }
+
   releaseCallback() {
     this.wasmModule.removeFunction(this.callback);
     this.callback = null;
+  }
+  lcdStatus() {
+    return this.lcdResult;
   }
 }

@@ -271,11 +271,12 @@ const VeryfiLens = (function () {
             );
             const video = videoRef;
             video.srcObject = stream;
+            torchTrack = stream.getVideoTracks()[0];
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
-          torchTrack = stream.getVideoTracks()[0];
+          
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
@@ -1881,7 +1882,18 @@ const VeryfiLens = (function () {
 
     toggleTorch: () => {
       toggleTorchLight()
-    }
+    },
+
+    getLcdStatus: () => {
+      if (wasmWrapper.lcdStatus.LCDProb > 0.5) {
+        cardData.cvv = ""
+        cardData.date = ""
+        cardData.name = ""
+        cardData.number = ""
+        cardData.status = ""
+      }
+      return wasmWrapper.lcdStatus();
+    },
   };
 })();
 
