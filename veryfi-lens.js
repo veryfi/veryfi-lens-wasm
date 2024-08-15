@@ -1,42 +1,14 @@
 import DeviceUUID from "./wasm/device-uuid.js";
 import { WasmWrapper } from "./wasm/wasm.js";
 import gatherBrowserData from "./wasm/device-data.js";
-import UAParser from "./wasm/ua-parser.cjs";
+import UAParser from "./wasm/parser-wrapper.js";
 
 const VeryfiLens = (function () {
   const DEFAULT_BOX_COlOR = "rgba(84, 192, 139, 0.6)";
-  const DEFAULT_SCALE = 1.0;
   const INTERVAL = 250;
-  const LENS_DEVICE_ID_SEPARATOR = "LENS_DEVICE_ID";
-  const LENS_SESSION_KEY_SEPARATOR = "LENS_SESSION_KEY";
-  const MAX_SHAPE = 512.0;
-  const SOCKET_URL = "wss://lens.veryfi.com/ws/crop";
   const VALIDATE_URL = "https://lens.veryfi.com/rest/validate_partner";
-  const PROCESS_URL = "https://lens.veryfi.com/rest/process";
   const wasmWrapper = new WasmWrapper();
   let creditCardStatus = "AutoCaptureResultWaiting";
-  const SOCKET_STATUSES = [
-    {
-      value: 0,
-      state: "CONNECTING",
-    },
-    {
-      value: 1,
-      state: "OPEN",
-    },
-    {
-      value: 2,
-      state: "CLOSING",
-    },
-    {
-      value: 3,
-      state: "CLOSED",
-    },
-    {
-      value: -1,
-      state: "UNDEFINED",
-    },
-  ];
 
   let boxRef = null;
   let cropImgRef = null;
@@ -45,9 +17,8 @@ const VeryfiLens = (function () {
   let intervalRef = null;
   let userAgent = null;
   let device_uuid = null;
+  let torchTrack = null;
   let fullSizeImage;
-  let torchTrack = null
-  // let wasmWrapper = null;
   let finalImage;
 
   let previewData = null;
@@ -57,23 +28,17 @@ const VeryfiLens = (function () {
   let currentFrame = "";
   let isStitchingProcess = false;
   let isDocumentProcess = false;
-  let isInitialized = false;
   let hasCoordinates = false;
   let hasInit = false;
   let image = "";
   let isDocument = false;
-  let isSocketBusy = false;
   let lensSessionKey = "";
-  let scale = DEFAULT_SCALE;
-  let ws = null;
   let blurStatus = "";
   let variance;
   let shouldUpdatePreview = false;
   let CCPhase = "ScanningFront";
   let timeStamp = 0;
   let ShouldProcessCC = true;
-  // let cv = null;
-  let cvReady = false;
 
   let cardData = {
     status: "",
@@ -82,6 +47,7 @@ const VeryfiLens = (function () {
     date: "",
     cvv: "",
   };
+
   const releaseCanvas = (canvas) => {
     if (canvas) {
       canvas.width = 1;
@@ -111,44 +77,6 @@ const VeryfiLens = (function () {
     isDocument = state;
   };
 
-  const socketInitializer = async () => {
-    const connectionId = Date.now();
-    ws = new WebSocket(`${SOCKET_URL}/${connectionId}`);
-    ws.onmessage = function (event) {
-      const payload = JSON.parse(event.data);
-      switch (payload.event) {
-        case "connect":
-          isSocketBusy = false;
-          console.log("[EVENT] Started sending frames");
-          break;
-        case "cropped":
-          isSocketBusy = false;
-          console.log("[EVENT] Got cropped contours");
-          if (payload.data.is_receipt === false) {
-            const video = videoRef;
-            let boxCanvas = boxRef;
-            if (video && boxCanvas) {
-              boxCanvas.width = video.videoWidth;
-              boxCanvas.height = video.videoHeight;
-              const ctx = boxCanvas.getContext("2d");
-              if (ctx) ctx.restore();
-            }
-            setHasCoordinates(false);
-            return;
-          }
-          const rCorners = payload.data.contours.map((corner) =>
-            corner.map((cord) => cord / scale)
-          );
-          drawContours(rCorners);
-          // coordinates = rCorners;
-          break;
-        default:
-          isSocketBusy = false;
-          console.log("[EVENT] Unknown event");
-      }
-    };
-  };
-
   const displayVideo = () => {
     const video = videoRef;
     const frameCanvas = frameRef;
@@ -157,131 +85,6 @@ const VeryfiLens = (function () {
       frameCanvas.height = video.videoHeight;
       const ctx = frameCanvas.getContext("2d");
       if (ctx) ctx.drawImage(video, 0, 0);
-    }
-  };
-
-  const sendFrame = () => {
-    if (isSocketBusy) return;
-    const video = videoRef;
-    const frameCanvas = frameRef;
-    if (video && frameCanvas) {
-      let videoHeight = Number(video.videoHeight);
-      let videoWidth = Number(video.videoWidth);
-
-      const fullSizeCanvas = document.createElement("canvas");
-      fullSizeCanvas.width = videoWidth;
-      fullSizeCanvas.height = videoHeight;
-      const fullSizeCtx = fullSizeCanvas.getContext("2d");
-
-      if (fullSizeCtx) {
-        fullSizeCtx.save();
-        fullSizeCtx.drawImage(video, 0, 0, videoWidth, videoHeight);
-        fullSizeCtx.restore();
-        const imgString = fullSizeCanvas.toDataURL("image/jpeg");
-
-        fullSizeImage = new Image();
-        fullSizeImage.src = imgString;
-      }
-
-      if (videoWidth > videoHeight) {
-        if (videoWidth > MAX_SHAPE) {
-          scale = MAX_SHAPE / videoWidth;
-          videoHeight = videoHeight * scale;
-          videoWidth = MAX_SHAPE;
-        }
-      } else {
-        if (videoHeight > MAX_SHAPE) {
-          scale = MAX_SHAPE / videoHeight;
-          videoWidth = videoWidth * scale;
-          videoHeight = MAX_SHAPE;
-        }
-      }
-      frameCanvas.width = videoWidth;
-      frameCanvas.height = videoHeight;
-      const ctx = frameCanvas.getContext("2d");
-
-      if (ctx) {
-        ctx.save();
-        ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-        ctx.restore();
-      }
-      const imgString = frameCanvas.toDataURL("image/jpeg");
-      const payload = imgString.split("data:image/jpeg;base64,")[1];
-      setCurrentFrame(payload);
-
-      if (ws.readyState === 1) {
-        isSocketBusy = true;
-        ws.send(
-          getDeviceID(device_uuid) +
-            LENS_DEVICE_ID_SEPARATOR +
-            lensSessionKey +
-            LENS_SESSION_KEY_SEPARATOR +
-            payload
-        );
-      }
-      releaseCanvas(frameCanvas);
-    }
-  };
-
-  const getVideo = async () => {
-    const isDesktop = window.screen.width > window.screen.height;
-    const isAndroid = /Android/i.test(navigator.userAgent);
-
-    if (navigator) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(
-          (device) => device.kind === "videoinput"
-        );
-
-        let videoConfig = {
-          aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
-          width: { ideal: 3840 },
-          height: { ideal: 2160 },
-          advanced: [{ torch: true }] 
-        };
-
-        if (isAndroid) {
-          // Attempt to choose the main camera only on Android devices
-          const mainCameraDevice = videoDevices.find((device) =>
-            device.label.includes("camera2 0")
-          );
-          if (mainCameraDevice) {
-            console.log("Main camera found", mainCameraDevice.deviceId);
-            videoConfig.deviceId = { exact: mainCameraDevice.deviceId };
-          } else {
-            console.log(
-              'No camera with label "camera2 0" found, using default camera settings'
-            );
-            videoConfig.facingMode = "environment"; // Fallback to default camera
-          }
-        } else {
-          // Non-Android devices use default camera settings
-          console.log("Non-Android device, using default camera settings");
-          videoConfig.facingMode = "environment";
-        }
-
-        await navigator.mediaDevices
-          .getUserMedia({ video: videoConfig })
-          .then((stream) => {
-            console.log(
-              videoConfig.deviceId
-                ? "Started stream with main camera"
-                : "Started stream with default camera"
-            );
-            const video = videoRef;
-            video.srcObject = stream;
-            torchTrack = stream.getVideoTracks()[0];
-          })
-          .catch((err) => {
-            console.log(`[Event] Error: ${err}`);
-          });
-          
-      } catch (error) {
-        console.error("Error accessing the camera", error);
-      }
-    } else {
-      console.log("No navigator available");
     }
   };
 
@@ -300,7 +103,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 2560 },
           height: { ideal: 1440 },
-          advanced: [{ torch: true }] 
+          advanced: [{ torch: true }],
         };
 
         if (isAndroid) {
@@ -334,12 +137,11 @@ const VeryfiLens = (function () {
             const video = videoRef;
             video.srcObject = stream;
             wasmWrapper.setStitcherCallback(logLongDocument);
-            torchTrack = stream.getVideoTracks()[0];
           })
           .catch((err) => {
             console.log(`[Event] Error: ${err}`);
           });
-          
+        torchTrack = stream.getVideoTracks()[0];
       } catch (error) {
         console.error("Error accessing the camera", error);
       }
@@ -376,7 +178,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
           height: { ideal: 2160 },
-          advanced: [{ torch: true }] 
+          advanced: [{ torch: true }],
         };
 
         if (useMainCamera) {
@@ -385,7 +187,9 @@ const VeryfiLens = (function () {
           videoConfig.facingMode = "environment";
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConfig });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConfig,
+        });
         const video = videoRef;
         video.srcObject = stream;
         wasmWrapper.setDocumentCallback(logDocument);
@@ -428,7 +232,7 @@ const VeryfiLens = (function () {
           aspectRatio: isDesktop ? 9 / 16 : 16 / 9,
           width: { ideal: 3840 },
           height: { ideal: 2160 },
-          advanced: [{ torch: true }]
+          advanced: [{ torch: true }],
         };
 
         if (useMainCamera) {
@@ -487,7 +291,7 @@ const VeryfiLens = (function () {
         let videoConfig = {
           width: { ideal: 3840 },
           height: { ideal: 2160 },
-          advanced: [{ torch: true }] 
+          advanced: [{ torch: true }],
         };
 
         if (isDesktop) {
@@ -531,13 +335,24 @@ const VeryfiLens = (function () {
     }
   };
 
+  const loadImage = (src) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  };
+
   const toggleTorchLight = async () => {
     if (torchTrack) {
       const capabilities = torchTrack.getCapabilities();
       if (capabilities.torch) {
         try {
           await torchTrack.applyConstraints({
-            advanced: [{ torch: !torchTrack.getConstraints().advanced?.[0]?.torch }]
+            advanced: [
+              { torch: !torchTrack.getConstraints().advanced?.[0]?.torch },
+            ],
           });
         } catch (err) {
           console.error("Error toggling torch:", err);
@@ -548,15 +363,6 @@ const VeryfiLens = (function () {
     } else {
       console.log("Camera not initialized");
     }
-  };
-
-  const loadImage = (src) => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = src;
-    });
   };
 
   const sendWasm = async (mode) => {
@@ -804,7 +610,7 @@ const VeryfiLens = (function () {
           if (cardData.status == "AutoCaptureResultDone") {
             ShouldProcessCC = false;
             wasmWrapper.resetAutoCapture(true, true, true, true);
-            // wasmWrapper.releaseCallback();
+            wasmWrapper.releaseCallback();
           }
       }
     }
@@ -817,24 +623,27 @@ const VeryfiLens = (function () {
       BoxCanvas.width = video.videoWidth;
       BoxCanvas.height = video.videoHeight;
       let ctx = BoxCanvas.getContext("2d");
-  
+
       if (ctx && contours && contours.length === 4) {
         ctx.clearRect(0, 0, BoxCanvas.width, BoxCanvas.height);
         ctx.save();
         ctx.beginPath();
-  
+
         const scaleX = BoxCanvas.width / video.videoWidth;
         const scaleY = BoxCanvas.height / video.videoHeight;
-  
+
         // Calculate the bounding box of the contours
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let minX = Infinity,
+          minY = Infinity,
+          maxX = -Infinity,
+          maxY = -Infinity;
         contours.forEach(([x, y]) => {
           minX = Math.min(minX, x);
           minY = Math.min(minY, y);
           maxX = Math.max(maxX, x);
           maxY = Math.max(maxY, y);
         });
-  
+
         // Expand the bounding box slightly to ensure 100% coverage
         const expandFactor = 1;
         const centerX = (minX + maxX) / 2;
@@ -843,25 +652,30 @@ const VeryfiLens = (function () {
         maxX = centerX + (maxX - centerX) * expandFactor;
         minY = centerY - (centerY - minY) * expandFactor;
         maxY = centerY + (maxY - centerY) * expandFactor;
-  
+
         // Ensure the expanded box doesn't go outside the canvas
         minX = Math.max(0, minX * scaleX);
         minY = Math.max(0, minY * scaleY);
         maxX = Math.min(BoxCanvas.width, maxX * scaleX);
         maxY = Math.min(BoxCanvas.height, maxY * scaleY);
-  
+
         // Draw the expanded rectangle
         ctx.moveTo(minX, minY);
         ctx.lineTo(maxX, minY);
         ctx.lineTo(maxX, maxY);
         ctx.lineTo(minX, maxY);
         ctx.closePath();
-  
+
         ctx.fillStyle = boxColor;
         ctx.fill();
-  
+
         // Update coordinates with the expanded box
-        setCoordinates([[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]]);
+        setCoordinates([
+          [minX, minY],
+          [maxX, minY],
+          [maxX, maxY],
+          [minX, maxY],
+        ]);
         setHasCoordinates(true);
         ctx.restore();
       } else {
@@ -977,65 +791,9 @@ const VeryfiLens = (function () {
       }
     }
 
-    waitForElement("#blur-detector").then(() => {
-      isBlurry(cropImgCanvas);
-    });
-
     image = cropImgCanvas;
     const imgString = cropImgCanvas.toDataURL("image/jpeg");
 
-    return imgString.split("data:image/jpeg;base64,")[1];
-  };
-
-  const socketCropWasm = async () => {
-    let wasmOutput;
-    if (hasCoordinates) {
-      let [topLeft, topRight, bottomLeft, bottomRight] =
-        getCropLimits(coordinates);
-      wasmOutput = await wasmWrapper.cropWasm(
-        fullSizeImage,
-        [topLeft, topRight, bottomLeft, bottomRight].flat()
-      );
-    } else {
-      // If there are no coordinates, use the fullSizeImage as it is.
-      console.log("[Event] Using full size image");
-      const canvas = new OffscreenCanvas(
-        fullSizeImage.width,
-        fullSizeImage.height
-      );
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(fullSizeImage, 0, 0);
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        fullSizeImage.width,
-        fullSizeImage.height
-      );
-      wasmOutput = {
-        data: new Uint8ClampedArray(imageData.data.buffer),
-        blurLevel: 0.0,
-        outputWidth: fullSizeImage.width,
-        outputHeight: fullSizeImage.height,
-      };
-    }
-
-    const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
-    const width = outputWidth;
-    const height = outputHeight;
-    const cropImgCanvas = cropImgRef;
-    cropImgRef.height = height;
-    cropImgRef.width = width;
-    const ctx = cropImgCanvas.getContext("2d");
-    const imageData = new ImageData(data, width, height);
-    ctx.putImageData(imageData, 0, 0);
-    setBlurStatus(blurLevel);
-
-    stopWasm();
-
-    const imgString = cropImgCanvas.toDataURL("image/jpeg");
-    image = cropImgCanvas;
-    releaseCanvas(boxRef);
-    coordinates = [];
     return imgString.split("data:image/jpeg;base64,")[1];
   };
 
@@ -1096,12 +854,6 @@ const VeryfiLens = (function () {
       });
   };
 
-  const stopLens = () => {
-    ws.close();
-    videoRef.srcObject.getTracks().forEach((track) => track.stop());
-    clearInterval(intervalRef);
-  };
-
   const stopWasm = () => {
     videoRef && videoRef.srcObject.getTracks().forEach((track) => track.stop());
     clearInterval(intervalRef);
@@ -1150,26 +902,10 @@ const VeryfiLens = (function () {
     }
   };
 
-  const startLens = async () => {
-    await socketInitializer().then(() => {
-      console.log("[EVENT] Socket Initialized");
-    });
-    getVideo();
-    requestAnimationFrame(displayVideo);
-    intervalRef = setInterval(() => {
-      requestAnimationFrame(sendFrame);
-    }, INTERVAL);
-    return () => {
-      clearInterval(intervalRef);
-    };
-  };
-
   const startUploadWasm = async (client_id) => {
-    if (!wasmWrapper.loaded) {
-      await wasmWrapper.initialize(client_id);
-    }
+    await wasmWrapper.initialize(client_id);
     if (wasmWrapper) {
-      await wasmWrapper.setDocumentCallback(logDocument);
+      wasmWrapper.setDocumentCallback(logDocument);
     }
   };
 
@@ -1225,64 +961,6 @@ const VeryfiLens = (function () {
     }
   };
 
-  function loadOpenCv(url) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = url;
-      script.onload = () => resolve(); // Correctly scoped resolve
-      script.onerror = () => reject(new Error(`Script load error for ${url}`));
-      document.body.appendChild(script);
-      cvReady = true;
-    });
-  }
-
-  const isBlurry = async (image) => {
-    console.log("[EVENT] Checking for blur");
-
-    const src = cv.imread(image);
-    let refVariance;
-    let whiteCanvas = new cv.Mat(490, 866, cv.CV_8UC3, [255, 255, 255, 0]);
-
-    const grayscale = new cv.Mat();
-    const refGrayscale = new cv.Mat();
-
-    cv.cvtColor(src, grayscale, cv.COLOR_RGBA2GRAY);
-    cv.cvtColor(whiteCanvas, refGrayscale, cv.COLOR_RGBA2GRAY);
-
-    const laplacian = new cv.Mat();
-    const refLaplacian = new cv.Mat();
-
-    cv.Laplacian(grayscale, laplacian, cv.CV_8U);
-    cv.Laplacian(refGrayscale, refLaplacian, cv.CV_8U);
-
-    const meanStdDev = new cv.Mat();
-    const laplacianMean = new cv.Mat();
-    const refMeanStdDev = new cv.Mat();
-    const refLaplacianMean = new cv.Mat();
-
-    cv.meanStdDev(laplacian, laplacianMean, meanStdDev);
-    cv.meanStdDev(refLaplacian, refLaplacianMean, refMeanStdDev);
-
-    variance = meanStdDev.data64F[0];
-    refVariance = refMeanStdDev.data64F[0];
-
-    // console.log("variance", variance);
-    // console.log("reference variance", refVariance);
-
-    grayscale.delete();
-    laplacian.delete();
-    meanStdDev.delete();
-    laplacianMean.delete();
-    refGrayscale.delete();
-    refLaplacian.delete();
-    refMeanStdDev.delete();
-    refLaplacianMean.delete();
-    whiteCanvas.delete();
-    setBlurStatus(variance);
-
-    return;
-  };
-
   const createElementWithStyles = (tag, id, styles, parent) => {
     const element = document.createElement(tag);
     element.id = id;
@@ -1298,7 +976,6 @@ const VeryfiLens = (function () {
       position: "absolute",
       height: "100%",
       maxWidth: "500px",
-      // aspectRatio: "16/9",
     };
 
     cropImgRef = createElementWithStyles(
@@ -1325,59 +1002,6 @@ const VeryfiLens = (function () {
       { ...generalStyles, zIndex: 10 },
       container
     );
-  };
-
-  const flattenObject = (obj, parentKey = "", result = {}) => {
-    for (let key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        let propName = parentKey ? parentKey + "_" + key : key;
-
-        if (
-          typeof obj[key] === "object" &&
-          obj[key] !== null &&
-          !Array.isArray(obj[key])
-        ) {
-          flattenObject(obj[key], propName, result);
-        } else {
-          result[propName] = obj[key];
-        }
-      }
-    }
-    return result;
-  };
-
-  const parseUA = () => {
-    const userAgentString = navigator.userAgent;
-    const parser = new UAParser(userAgentString);
-    let parserResults = parser.getResult && parser.getResult();
-    if (parserResults) {
-      return parserResults;
-    }
-  };
-
-  const getBrowserData = () => {
-    const browserData = gatherBrowserData();
-    return browserData;
-  };
-
-  const waitForElement = (selector) => {
-    return new Promise((resolve) => {
-      if (document.querySelector(selector)) {
-        return resolve(document.querySelector(selector));
-      }
-
-      const observer = new MutationObserver((mutations) => {
-        if (document.querySelector(selector)) {
-          resolve(document.querySelector(selector));
-          observer.disconnect();
-        }
-      });
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-      });
-    });
   };
 
   const createCheckCanvases = () => {
@@ -1470,55 +1094,40 @@ const VeryfiLens = (function () {
     };
   };
 
+  const flattenObject = (obj, parentKey = "", result = {}) => {
+    for (let key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        let propName = parentKey ? parentKey + "_" + key : key;
 
-  async function convertToRGBA(imageSrc) {
-    const img = new Image();
-    img.src = URL.createObjectURL(imageSrc);
-    await new Promise((resolve) => {
-      img.onload = resolve;
-    });
+        if (
+          typeof obj[key] === "object" &&
+          obj[key] !== null &&
+          !Array.isArray(obj[key])
+        ) {
+          flattenObject(obj[key], propName, result);
+        } else {
+          result[propName] = obj[key];
+        }
+      }
+    }
+    return result;
+  };
 
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
+  const parseUA = () => {
+    const userAgentString = navigator.userAgent;
+    const parser = new UAParser(userAgentString);
+    let parserResults = parser.getResult && parser.getResult();
+    if (parserResults) {
+      return parserResults;
+    }
+  };
 
-    const rgbaImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return rgbaImageData;
-  }
+  const getBrowserData = () => {
+    const browserData = gatherBrowserData();
+    return browserData;
+  };
 
   return {
-    init: async (session, client_id) => {
-      userAgent = navigator.userAgent;
-      device_uuid = new DeviceUUID(userAgent).get();
-      console.log("[EVENT] Device ID", getDeviceID(device_uuid));
-      if (session) {
-        if (!cvReady) {
-          loadOpenCv("./wasm/opencv.js");
-        }
-        lensSessionKey = session;
-        createCanvases();
-        videoRef = document.getElementById("veryfi-video-ref");
-        const video = videoRef;
-        video.playsInline = true;
-        video.preload = "metadata";
-        video.autoplay = true;
-        frameRef = document.getElementById("veryfi-frame-ref");
-        boxRef = document.getElementById("veryfi-box-ref");
-        cropImgRef = document.getElementById("veryfi-crop-img-ref");
-        if (client_id) {
-          startLens();
-        } else {
-          console.log("No client id provided");
-          return;
-        }
-      } else {
-        console.log("No session token provided");
-        return;
-      }
-    },
-
     initWasm: async (session, client_id) => {
       isDocumentProcess = true;
       userAgent = navigator.userAgent;
@@ -1657,20 +1266,9 @@ const VeryfiLens = (function () {
       }
     },
 
-    startCamera: () => {
-      console.log("[EVENT] startCamera");
-      startLens();
-    },
-
     startCameraWasm: () => {
       console.log("[EVENT] startCamera");
       startWasm();
-    },
-
-    stopCamera: () => {
-      console.log("[EVENT] stopCamera");
-      stopLens();
-      clearInterval(intervalRef);
     },
 
     stopCameraWasm: () => {
@@ -1681,17 +1279,6 @@ const VeryfiLens = (function () {
 
     getCardData: async () => {
       return cardData;
-    },
-
-    capture: async (setImage, setIsEditing) => {
-      console.log("[EVENT] capture");
-      const finalImage = await cropImage();
-      setImage && setImage(finalImage);
-      console.log("[EVENT] hasCoordinates: ", hasCoordinates);
-      if (hasCoordinates) setIsDocument(true);
-      stopLens();
-      setIsEditing && setIsEditing(true);
-      return finalImage;
     },
 
     captureWasm: async (setImage, setIsEditing) => {
@@ -1712,51 +1299,48 @@ const VeryfiLens = (function () {
       setImage && setImage(finalImage);
       stopWasm();
       if (hasCoordinates) setIsDocument(true);
-      // wasmWrapper.releaseCallback();
+      wasmWrapper.releaseCallback();
       setIsEditing && setIsEditing(true);
       return finalImage;
     },
 
     captureUploaded: async (imageData) => {
-      const RGBAImage = await convertToRGBA(imageData);
-      return await createImageBitmap(RGBAImage).then(async (bitmap) => {
-        if (wasmWrapper.documentDetectorLoaded) {
-          const wasmOutput = await wasmWrapper.cropDocument(bitmap);
-          // console.log(wasmOutput, "output");
-          const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+      return await createImageBitmap(imageData).then((bitmap) => {
+        const wasmOutput = wasmWrapper.cropDocument(bitmap);
+        const { data, blurLevel, outputHeight, outputWidth } = wasmOutput;
+        // If a document is detected and cropped
+        if (outputWidth > 0 && outputHeight > 0) {
+          const width = outputWidth;
+          const height = outputHeight;
+          const cropImgCanvas = document.createElement("canvas");
+          cropImgCanvas.height = height;
+          cropImgCanvas.width = width;
+          const ctx = cropImgCanvas.getContext("2d");
+          const imageData = new ImageData(data, width, height);
+          ctx.putImageData(imageData, 0, 0);
+          setBlurStatus(blurLevel);
+          wasmWrapper.releaseCallback();
+          stopWasm();
 
-          if (outputWidth > 0 && outputHeight > 0) {
-            const width = outputWidth;
-            const height = outputHeight;
-            const cropImgCanvas = document.createElement("canvas");
-            cropImgCanvas.height = height;
-            cropImgCanvas.width = width;
-            const ctx = cropImgCanvas.getContext("2d");
-            const imageData = new ImageData(data, width, height);
-            ctx.putImageData(imageData, 0, 0);
-            setBlurStatus(blurLevel);
-            const imgString = cropImgCanvas.toDataURL("image/jpeg");
-            image = cropImgCanvas;
-            setIsDocument(true);
-            coordinates = [];
-            return imgString.split("data:image/jpeg;base64,")[1];
-          } else {
-            // Return the original, uncropped image
-            return new Promise((resolve, reject) => {
-              setIsDocument(false);
-              const reader = new FileReader();
-              reader.readAsDataURL(imageData);
-              reader.onload = function () {
-                const base64Image = reader.result.split(",")[1];
-                resolve(base64Image);
-              };
-              reader.onerror = function (error) {
-                reject(error);
-              };
-            });
-          }
+          const imgString = cropImgCanvas.toDataURL("image/jpeg");
+          image = cropImgCanvas;
+          releaseCanvas(boxRef);
+          setIsDocument(true);
+          coordinates = [];
+          return imgString.split("data:image/jpeg;base64,")[1];
         } else {
-          console.log("Wasm not loaded");
+          // Return the original, uncropped image
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(imageData);
+            reader.onload = function () {
+              const base64Image = reader.result.split(",")[1];
+              resolve(base64Image);
+            };
+            reader.onerror = function (error) {
+              reject(error);
+            };
+          });
         }
       });
     },
@@ -1810,24 +1394,6 @@ const VeryfiLens = (function () {
       lensSessionKey = key;
     },
 
-    getSocketStatus: () => {
-      const value = ws.readyState || 4;
-      return SOCKET_STATUSES[value];
-    },
-
-    getSocketStatusColor: () => {
-      const socketStatusesColors = [
-        "yellow",
-        "green",
-        "orange",
-        "red",
-        "purple",
-      ];
-
-      const value = ws.readyState || 4;
-      return socketStatusesColors[value];
-    },
-
     getBlurStatus: (setIsBlurry) => {
       setIsBlurry && setIsBlurry(blurStatus);
       return {
@@ -1855,7 +1421,6 @@ const VeryfiLens = (function () {
       boxRef && boxRef.remove();
       cropImgRef && cropImgRef.remove();
       setIsDocument(false);
-      // wasmWrapper.releaseCallback()
     },
 
     getDeviceData: async () => {
@@ -1876,21 +1441,18 @@ const VeryfiLens = (function () {
     getCardPhase: () => {
       return CCPhase;
     },
-    releaseWasm: () => {
-      wasmWrapper.release();
-    },
 
     toggleTorch: () => {
-      toggleTorchLight()
+      toggleTorchLight();
     },
 
     getLcdStatus: () => {
       if (wasmWrapper.lcdStatus.LCDProb > 0.5) {
-        cardData.cvv = ""
-        cardData.date = ""
-        cardData.name = ""
-        cardData.number = ""
-        cardData.status = ""
+        cardData.cvv = "";
+        cardData.date = "";
+        cardData.name = "";
+        cardData.number = "";
+        cardData.status = "";
       }
       return wasmWrapper.lcdStatus();
     },

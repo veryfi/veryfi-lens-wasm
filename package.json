@@ -1,7 +1,7 @@
 {
   "name": "veryfi-lens-wasm",
-  "version": "1.2.7",
-  "description": "Lens For Web SDK with WASM",
+  "version": "1.2.8",
+  "description": "Lens For Browser WASM SDK",
   "main": "veryfi-lens.js",
   "type": "module",
   "repository": {

@@ -2,54 +2,15 @@
 
 <img  src="https://user-images.githubusercontent.com/30125790/212157486-bfd08c5d-9337-4b78-be6f-230dc63838ba.png#gh-light-mode-only"  width="200">
 
-# Veryfi Lens for Web WASM SDK
 
+# Lens for Browser socket version has been moved to a separate package https://github.com/veryfi/veryfi-lens-socket
+
+# Veryfi Lens for Browser WASM SDK
 Veryfi Lens for Web SDK is a framework for your web app to give it document capture superpowers in minutes.
 
 Lens follows a client-server architecture where the server is for validating your client and getting session key and the client side is for displaying and showing Lens components for capturing documents.
 
 
-There are two ways of using Lens for Web:
-1. WebSocket (Only usual receipts, easy to install, slower than WASM)
-2. WASM (Usual and Long Receipts, very fast, some devices are not supported)
-
-# WebSocket
-1. Import package `import VeryfiLens from 'veryfi-lens-wasm'`
-   or `const lens = require('veryfi-lens-wasm').default` inside `useEffect` for next.js
-2. Add `id='veryfi-container'` to a div you want lens to appear (it should have full height and hidden overflow)
-
-For usual receipt (Next.Js example)
-```
- const [veryfiLens, setVeryfiLens] = useState<VeryfiLens | null>(null);
-
-  useEffect(() => {
-    let intervalRef: number | undefined;
-    if (typeof window !== 'undefined') {
-      const startLens = async () => {
-        const lens = require('../../utils/lens-web-sdk/veryfi-lens').default;
-        lens.init(sessionToken);
-        setVeryfiLens(lens);
-        intervalRef = window.setInterval(() => {
-          setSocketStatusColor(lens.getSocketStatusColor());
-        }, SOCKET_STATUS_UPDATE_INTERVAL);
-      }
-      startLens();
-    }
-    return () => {
-      clearInterval(intervalRef);
-    };
-  }, [sessionToken]);
-
-  const takePhoto = () => {
-    if (veryfiLens) {
-      veryfiLens.capture(setImage, setIsEditing)
-    } else {
-      setError('veryfiLens is not initialized');
-    }
-  };
-```
-
-# WASM
 **_You can skip first step and copy wasm folder from package directory manually if you want to do so_.**
 
 1. run `npm exec veryfi-lens-wasm-setup` and provide it with path to directory where
